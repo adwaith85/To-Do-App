@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import "./App.css";
 
-const API_URL = "http://localhost:8080/todo";
+const API_URL = "http://3.233.214.138:8080";
 
 function App() {
   const [todos, setTodos] = useState([]);
@@ -14,7 +14,7 @@ function App() {
 
   const fetchTodos = async () => {
     try {
-      const response = await axios.get(API_URL);
+      const response = await axios.get(`${API_URL}/todo`);
       setTodos(response.data);
     } catch (error) {
       console.error("Error fetching todos:", error);
@@ -25,7 +25,7 @@ function App() {
     if (input.trim() === "") return;
 
     try {
-      const response = await axios.post(`${API_URL}/create`, { task: input });
+      const response = await axios.post(`${API_URL}/todo/create`, { task: input });
       setTodos([...todos, response.data]);
       setInput("");
     } catch (error) {
@@ -35,7 +35,7 @@ function App() {
 
   const toggleTodo = async (id) => {
     try {
-      const response = await axios.patch(`${API_URL}/toggle/${id}`);
+      const response = await axios.patch(`${API_URL}/todo/toggle/${id}`);
       setTodos(todos.map(todo => todo._id === id ? response.data : todo));
     } catch (error) {
       console.error("Error toggling todo:", error);
@@ -44,7 +44,7 @@ function App() {
 
   const deleteTodo = async (id) => {
     try {
-      await axios.delete(`${API_URL}/delete/${id}`);
+      await axios.delete(`${API_URL}/todo/delete/${id}`);
       setTodos(todos.filter((todo) => todo._id !== id));
     } catch (error) {
       console.error("Error deleting todo:", error);

@@ -6,7 +6,7 @@ import routerTodo from "./routerTodo.js"
 
 dotenv.config()
 const MONGO_URL = process.env.MONGO_URL || "mongodb://localhost:27017/todo"
-const PORT = process.env.PORT || 8000
+const PORT = process.env.PORT || "http://3.233.214.138"
 
 
 const app = express()
