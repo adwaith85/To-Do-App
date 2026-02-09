@@ -17,7 +17,7 @@ mongoose
 
 app.use(express.json())
 app.use(cors({
-    origin: "http://3.233.214.138",
+    origin: "http://3.80.9.91",
     credentials: true
 }))
 
