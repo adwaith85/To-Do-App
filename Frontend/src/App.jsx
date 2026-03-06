@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import "./App.css";
 
-const API_URL = "http://3.80.9.91:8080";
+const API_URL = "https://todoapi.adwaithh.online";
 
 function App() {
   const [todos, setTodos] = useState([]);
