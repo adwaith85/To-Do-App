@@ -14,8 +14,11 @@
  */
 import axios from "axios";
 
-export const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5050";
+/**
+ * No environment files on the frontend by design — the API location is
+ * baked in here. Change this single constant when deploying.
+ */
+export const API_BASE_URL = "http://localhost:5050";
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -30,10 +33,25 @@ export const setAccessToken = (token) => {
   accessToken = token;
 };
 
-/* ---- Request interceptor: attach bearer token ---- */
+/* ---- CSRF double-submit helper ----
+ * The backend drops a readable `csrfToken` cookie; every state-changing
+ * auth request echoes it back as a header. Cookies are shared across
+ * ports on localhost, so the SPA can read what the API set.
+ */
+function csrfTokenFromCookie() {
+  const match = /(?:^|;\s*)csrfToken=([^;]*)/.exec(document.cookie || "");
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+/* ---- Request interceptor: bearer token + CSRF echo ---- */
 client.interceptors.request.use((config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
+  }
+  const method = (config.method || "get").toLowerCase();
+  if (method !== "get" && method !== "head") {
+    const csrf = csrfTokenFromCookie();
+    if (csrf) config.headers["x-csrf-token"] = csrf;
   }
   return config;
 });
@@ -45,7 +63,12 @@ client.interceptors.request.use((config) => {
 const NO_REFRESH_PATHS = [
   "/api/auth/refresh-token",
   "/api/auth/login",
+  "/api/auth/verify-login-otp",
   "/api/auth/register",
+  "/api/auth/verify-otp",
+  "/api/auth/resend-otp",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
   "/api/auth/logout",
 ];
 
@@ -73,7 +96,10 @@ client.interceptors.response.use(
       refreshPromise ||= axios.post(
         `${API_BASE_URL}/api/auth/refresh-token`,
         {},
-        { withCredentials: true }
+        {
+          withCredentials: true,
+          headers: { "x-csrf-token": csrfTokenFromCookie() || "" },
+        }
       );
 
       const { data } = await refreshPromise;

@@ -9,24 +9,33 @@
  *  - history trail   → utils/history.util.js (never blocks the response)
  */
 import User from "../models/user.model.js";
+import LoginHistory from "../models/loginHistory.model.js";
 import { env } from "../config/env.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { verifyPassword } from "../utils/password.util.js";
-import { logAuthEvent } from "../utils/history.util.js";
+import { logAuthEvent, getClientIp, getDevice } from "../utils/history.util.js";
 import { assertCaptcha } from "../utils/captcha.util.js";
+import { sendNewLoginAlert, sendOtpEmail } from "../utils/mailer.util.js";
 import {
   issueSession,
   rotateRefreshToken,
   revokeCurrentSession,
   revokeAllSessions,
+  revokeSessionById,
+  listSessions,
   clearRefreshCookie,
+  getRefreshTokenFromRequest,
 } from "../services/token.service.js";
 import {
   issueOtp,
   assertResendCooldown,
   verifyOtpForTarget,
 } from "../services/otp.service.js";
+import {
+  signTwoFactorPendingToken,
+  verifyTwoFactorPendingToken,
+} from "../utils/jwt.util.js";
 
 /* ------------------------------------------------------------------ */
 /* POST /api/auth/register                                             */
@@ -160,11 +169,67 @@ export const resendOtp = asyncHandler(async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/* Shared login helpers                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Suspicious-login detection: has this account EVER logged in from this
+ * exact IP + user-agent before? If not, email a security alert.
+ * Never throws — the alert must not break the login itself.
+ */
+async function maybeAlertNewDevice(user, req) {
+  try {
+    const seen = await LoginHistory.exists({
+      user: user._id,
+      action: "LOGIN_SUCCESS",
+      ip: getClientIp(req),
+      device: getDevice(req),
+    });
+    if (seen) return { suspicious: false, alerted: false };
+
+    const { delivered } = await sendNewLoginAlert(user.email, {
+      ip: getClientIp(req),
+      device: getDevice(req),
+      when: new Date().toUTCString(),
+    });
+    return { suspicious: true, alerted: delivered };
+  } catch (error) {
+    console.error("[auth] new-device alert failed:", error.message);
+    return { suspicious: true, alerted: false };
+  }
+}
+
+/** Shared tail of every successful credential grant (with or without 2FA). */
+async function grantLoginSession(user, req, res, { rememberMe = false }) {
+  await user.resetLoginFailures();
+  user.lastLoginAt = new Date();
+  await user.save();
+
+  const accessToken = await issueSession(user, req, res, { rememberMe });
+
+  const { suspicious, alerted } = await maybeAlertNewDevice(user, req);
+  await logAuthEvent({
+    userId: user._id,
+    action: "LOGIN_SUCCESS",
+    req,
+    meta: { rememberMe, suspicious, alertEmailed: alerted },
+  });
+
+  return accessToken;
+}
+
+/* ------------------------------------------------------------------ */
 /* POST /api/auth/login                                                */
 /* ------------------------------------------------------------------ */
 
 /**
  * Credential check → session pair (access token + refresh cookie).
+ * Identifier may be an EMAIL or a PHONE number; `rememberMe` stretches the
+ * refresh cookie from 7 to 30 days.
+ *
+ * When the user opted into 2FA, NO session is issued here — instead a
+ * short-lived pendingToken is returned and a code is emailed; the client
+ * finishes with POST /verify-login-otp.
  *
  * Brute-force defenses stacked here:
  *  1. reCAPTCHA v3 (when configured)
@@ -172,21 +237,25 @@ export const resendOtp = asyncHandler(async (req, res) => {
  *  3. timing-equalized responses so unknown emails look like bad passwords
  */
 export const login = asyncHandler(async (req, res) => {
-  const { email, password, captchaToken } = req.body;
+  // Zod normalized the identifier into {email} OR {phone}.
+  const identifier = req.body.email;
+  const { password, rememberMe, captchaToken } = req.body;
 
   await assertCaptcha(captchaToken, "login");
 
-  // +password: field has select:false by default for safety elsewhere.
-  const user = await User.findOne({ email }).select("+password");
+  const query = identifier.email ? { email: identifier.email } : { phone: identifier.phone };
 
-  /* ---- Unknown email: burn comparable CPU time to defeat timing attacks ---- */
+  // +password: field has select:false by default for safety elsewhere.
+  const user = await User.findOne(query).select("+password");
+
+  /* ---- Unknown identity: burn comparable CPU time to defeat timing attacks ---- */
   if (!user) {
     await verifyPassword(password, "$2a$12$C6UzMDM.H6dfI/f/IKcEeO1R9cD7nFt0QkCwLPUnZ0eKBHhP1JBTO");
     await logAuthEvent({
       action: "LOGIN_FAILED", status: "failed",
-      req, meta: { reason: "unknown_email" },
+      req, meta: { reason: "unknown_identifier" },
     });
-    throw ApiError.unauthorized("Incorrect email or password.");
+    throw ApiError.unauthorized("Incorrect credentials.");
   }
 
   /* ---- Locked account? ---- */
@@ -219,7 +288,7 @@ export const login = asyncHandler(async (req, res) => {
         "ACCOUNT_LOCKED"
       );
     }
-    throw ApiError.unauthorized("Incorrect email or password.");
+    throw ApiError.unauthorized("Incorrect credentials.");
   }
 
   /* ---- Verification gate ---- */
@@ -230,19 +299,215 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Please verify your email first.", [], "EMAIL_NOT_VERIFIED");
   }
 
-  /* ---- Success: clear counters + mint session ---- */
-  await user.resetLoginFailures();
-  user.lastLoginAt = new Date();
-  await user.save();
+  /* ---- Two-factor branch: hold the session until the code checks out ---- */
+  if (user.twoFactorEnabled) {
+    const pendingToken = signTwoFactorPendingToken(user);
+    const { delivered, devCode } = await issueOtp("login_2fa", user.email);
 
-  const accessToken = await issueSession(user, req, res);
+    await logAuthEvent({
+      userId: user._id, action: "LOGIN_2FA_PENDING", req,
+      meta: { rememberMe, otpDelivered: delivered },
+    });
 
-  await logAuthEvent({ userId: user._id, action: "LOGIN_SUCCESS", req });
+    const maskedEmail = user.email.replace(/^(.).*(@.*)$/, "$1*****$2");
+    return res.status(200).json({
+      success: true,
+      message: `We emailed a sign-in code to ${maskedEmail}. It expires in ${env.otp.expiryMinutes} minutes.`,
+      data: { twoFactorRequired: true, pendingToken },
+      ...(devCode && { devOtp: devCode }), // dev-only fallback (SMTP off)
+    });
+  }
+
+  /* ---- Success path ---- */
+  const accessToken = await grantLoginSession(user, req, res, { rememberMe });
 
   res.status(200).json({
     success: true,
     message: "Logged in successfully.",
     data: { user, accessToken },
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* POST /api/auth/verify-login-otp                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Second factor of a 2FA login: exchange {pendingToken, otp} for the real
+ * session pair. The pending token proves the PASSWORD step already passed;
+ * it expires quickly and grants nothing by itself.
+ */
+export const verifyLoginOtp = asyncHandler(async (req, res) => {
+  const { pendingToken, otp, rememberMe } = req.body;
+
+  let payload;
+  try {
+    payload = verifyTwoFactorPendingToken(pendingToken);
+  } catch (error) {
+    await logAuthEvent({
+      action: "LOGIN_2FA_FAILED", status: "failed",
+      req, meta: { reason: "pending_token_invalid" },
+    });
+    throw error;
+  }
+
+  const user = await User.findById(payload.sub).select("+password");
+  if (!user || !user.isEmailVerified) {
+    throw ApiError.unauthorized("Login session expired. Please sign in again.", "TWO_FACTOR_EXPIRED");
+  }
+  if (user.isLocked()) {
+    throw new ApiError(423, "Account temporarily locked. Try again later.", [], "ACCOUNT_LOCKED");
+  }
+
+  try {
+    await verifyOtpForTarget("login_2fa", user.email, otp);
+  } catch (error) {
+    await logAuthEvent({
+      userId: user._id, action: "LOGIN_2FA_FAILED", status: "failed",
+      req, meta: { reason: error.message },
+    });
+    throw error;
+  }
+
+  const accessToken = await grantLoginSession(user, req, res, { rememberMe });
+
+  await logAuthEvent({ userId: user._id, action: "LOGIN_2FA_SUCCESS", req });
+
+  res.status(200).json({
+    success: true,
+    message: "Logged in successfully.",
+    data: { user, accessToken },
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Device/session management                                           */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/auth/sessions — every active device session for this account. */
+export const getSessions = asyncHandler(async (req, res) => {
+  const sessions = await listSessions(req.user._id, getRefreshTokenFromRequest(req));
+  res.status(200).json({ success: true, data: { sessions } });
+});
+
+/**
+ * DELETE /api/auth/sessions/:id — revoke one device remotely.
+ * Revoking the CURRENT device also clears its refresh cookie.
+ */
+export const revokeSession = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const result = await revokeSessionById(
+    req.user._id,
+    id,
+    getRefreshTokenFromRequest(req)
+  );
+  if (!result.existed) throw ApiError.notFound("Session not found.");
+
+  if (result.wasCurrent) clearRefreshCookie(res);
+
+  await logAuthEvent({
+    userId: req.user._id, action: "SESSION_REVOKED", req, meta: { sessionId: id },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: result.wasCurrent
+      ? "This device was signed out."
+      : "That device was signed out.",
+  });
+});
+
+/**
+ * PATCH /api/auth/2fa — turn the email second factor on/off per user.
+ */
+export const toggleTwoFactor = asyncHandler(async (req, res) => {
+  const { enabled } = req.body;
+
+  const user = await User.findById(req.user._id);
+  user.twoFactorEnabled = enabled;
+  await user.save();
+
+  await logAuthEvent({
+    userId: user._id, action: "TWO_FACTOR_TOGGLED", req, meta: { enabled },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: enabled
+      ? "Two-factor authentication is ON — codes will be emailed at sign-in."
+      : "Two-factor authentication is OFF.",
+    data: { user },
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Password reset                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * POST /api/auth/forgot-password — email a single-use reset code.
+ * ALWAYS answers generically so attackers can't probe which emails exist.
+ * The same tight limiter guards both reset endpoints (mail-bomb guard).
+ */
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const genericMessage =
+    "If that email belongs to an account, a reset code has been sent — it expires shortly.";
+
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    return res.status(200).json({ success: true, message: genericMessage });
+  }
+
+  const { delivered, devCode } = await issueOtp("password_reset", email);
+
+  await logAuthEvent({
+    userId: user._id, action: "PASSWORD_RESET_REQUESTED", req, meta: { delivered },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: genericMessage,
+    ...(devCode && { devOtp: devCode }), // dev-only fallback (SMTP off)
+  });
+});
+
+/**
+ * POST /api/auth/reset-password — consume the code, set the new password,
+ * then KILL EVERY active session (stolen cookies stop working instantly).
+ */
+export const resetPassword = asyncHandler(async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  const user = await User.findOne({ email }).select("+password");
+  if (!user) throw ApiError.badRequest("Invalid or expired reset code.");
+
+  try {
+    await verifyOtpForTarget("password_reset", email, otp);
+  } catch (error) {
+    await logAuthEvent({
+      userId: user._id, action: "PASSWORD_RESET_REQUESTED", status: "failed",
+      req, meta: { reason: error.message },
+    });
+    throw ApiError.badRequest("Invalid or expired reset code.");
+  }
+
+  user.password = newPassword; // pre-save hook hashes it (bcrypt 12)
+  user.failedLoginAttempts = 0; // give the legitimate owner a clean slate
+  user.lockUntil = null;
+  await user.save();
+
+  // Spec requirement: invalidate ALL existing refresh tokens after a reset.
+  await revokeAllSessions(user._id);
+  clearRefreshCookie(res);
+
+  await logAuthEvent({ userId: user._id, action: "PASSWORD_RESET_SUCCESS", req });
+
+  res.status(200).json({
+    success: true,
+    message: "Password updated. Please sign in with your new password.",
   });
 });
 

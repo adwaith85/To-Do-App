@@ -6,8 +6,8 @@
  * complexity, per-country phone digit checks) plus frontend-only rules
  * (confirm password match, terms accepted).
  *
- * On success we navigate to /verify-otp carrying the email (+ devOtp when
- * SMTP is unconfigured locally so devs can complete the flow).
+ * UX details: live zxcvbn strength meter, show/hide passwords,
+ * red-border errors / green-border valid fields, toast notifications.
  */
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -15,7 +15,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate } from "react-router-dom";
 import { parsePhoneNumberFromString, getCountries, getCountryCallingCode } from "libphonenumber-js";
+import toast from "react-hot-toast";
 import AuthLayout from "../components/AuthLayout";
+import PasswordStrength from "../components/PasswordStrength";
 import { useAuth } from "../context/useAuth";
 import { executeCaptcha } from "../utils/captcha";
 
@@ -62,7 +64,6 @@ const registerSchema = z
     }),
   })
   .superRefine((data, ctx) => {
-    // Confirm-password match check.
     if (data.confirmPassword !== data.password) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -82,12 +83,28 @@ const registerSchema = z
     }
   });
 
+/* Small show/hide toggle used by both password inputs. */
+function PasswordToggle({ visible, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={visible ? "Hide password" : "Show password"}
+      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md px-1 text-xs font-semibold tracking-wide text-slate-400 transition hover:text-brand-300"
+    >
+      {visible ? "HIDE" : "SHOW"}
+    </button>
+  );
+}
+
 export default function Register() {
   const { register: signUp } = useAuth();
   const navigate = useNavigate();
   const countries = useCountryOptions();
   const [serverError, setServerError] = useState("");
-  const [country, setCountry] = useState("IN"); // drives the dial-code hint
+  const [country, setCountry] = useState("IN");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const {
     register,
@@ -95,45 +112,55 @@ export default function Register() {
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: "", email: "", country: "IN", phone: "", password: "", confirmPassword: "", terms: false },
+    defaultValues: {
+      name: "", email: "", country: "IN", phone: "",
+      password: "", confirmPassword: "", terms: false,
+    },
+  });
+
+  // Lightweight mirrors of the fields we style reactively (avoids
+  // useForm().watch(), which the React compiler cannot memoize safely).
+  const [typed, setTyped] = useState({ name: "", email: "", phone: "", password: "", confirm: "" });
+  const mirror = (key) => ({
+    onChange: (e) => setTyped((t) => ({ ...t, [key]: e.target.value })),
   });
 
   const selectedDial = `+${getCountryCallingCode(country)}`;
 
-  const onSubmit = async (values) => {
+  const onSubmit = async (vals) => {
     setServerError("");
     try {
-      // Normalize to E.164 ("+919876543210") before sending.
-      const parsedPhone = parsePhoneNumberFromString(values.phone, values.country);
-
+      const parsedPhone = parsePhoneNumberFromString(vals.phone, vals.country);
       const captchaToken = await executeCaptcha("register");
 
       await signUp({
-        name: values.name,
-        email: values.email,
-        phone: parsedPhone.number,
-        password: values.password,
+        name: vals.name,
+        email: vals.email,
+        phone: parsedPhone.number, // E.164
+        password: vals.password,
         ...(captchaToken && { captchaToken }),
       });
 
-      navigate("/verify-otp", { state: { email: values.email } });
+      toast.success("Account created! Check your inbox for the code.");
+      navigate("/verify-otp", { state: { email: vals.email } });
     } catch (err) {
-      setServerError(
+      const msg =
         err.response?.data?.message ||
-          err.message ||
-          "Registration failed. Please try again."
-      );
+        err.message ||
+        "Registration failed. Please try again.";
+      setServerError(msg);
+      toast.error(msg);
     }
   };
 
   return (
     <AuthLayout
-      title="Create account"
+      title="Create your account"
       subtitle="One verified account across all your devices."
       footer={
         <>
           Already registered?{" "}
-          <Link to="/login" className="font-medium text-indigo-400 hover:text-indigo-300">
+          <Link to="/login" className="font-semibold text-brand-400 transition hover:text-brand-300">
             Log in
           </Link>
         </>
@@ -150,10 +177,10 @@ export default function Register() {
             type="text"
             autoComplete="name"
             placeholder="Adwaith H"
-            className={`input-field ${errors.name ? "input-error" : ""}`}
-            {...register("name")}
+            className={`input-field ${errors.name ? "input-error" : typed.name ? "input-valid" : ""}`}
+            {...register("name", mirror("name"))}
           />
-          {errors.name && <p className="error-text">{errors.name.message}</p>}
+          {errors.name && <p className="error-text">⚠ {errors.name.message}</p>}
         </div>
 
         {/* Email */}
@@ -164,10 +191,10 @@ export default function Register() {
             type="email"
             autoComplete="email"
             placeholder="you@example.com"
-            className={`input-field ${errors.email ? "input-error" : ""}`}
-            {...register("email")}
+            className={`input-field ${errors.email ? "input-error" : typed.email ? "input-valid" : ""}`}
+            {...register("email", mirror("email"))}
           />
-          {errors.email && <p className="error-text">{errors.email.message}</p>}
+          {errors.email && <p className="error-text">⚠ {errors.email.message}</p>}
         </div>
 
         {/* Country + Phone */}
@@ -177,12 +204,12 @@ export default function Register() {
             <select
               aria-label="Country code"
               value={country}
-              className="input-field w-32 shrink-0"
+              className="input-field w-36 shrink-0 cursor-pointer"
               {...register("country")}
               onChange={(e) => setCountry(e.target.value)}
             >
               {countries.map((c) => (
-                <option key={c.code} value={c.code} className="bg-slate-900">
+                <option key={c.code} value={c.code} className="bg-ink-900">
                   {c.name} ({c.dial})
                 </option>
               ))}
@@ -191,59 +218,85 @@ export default function Register() {
               id="phone"
               type="tel"
               inputMode="tel"
-              placeholder={selectedDial ? `${selectedDial} 98765 43210` : "Phone number"}
-              className={`input-field ${errors.phone ? "input-error" : ""}`}
-              {...register("phone")}
+              placeholder={`${selectedDial} 98765 43210`}
+              className={`input-field ${errors.phone ? "input-error" : typed.phone ? "input-valid" : ""}`}
+              {...register("phone", mirror("phone"))}
             />
           </div>
-          {errors.phone && <p className="error-text">{errors.phone.message}</p>}
+          {(errors.phone || errors.country) && (
+            <p className="error-text">⚠ {errors.phone?.message || errors.country?.message}</p>
+          )}
         </div>
 
         {/* Password */}
         <div>
           <label htmlFor="password" className="label-text">Password</label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            placeholder="Min 8 chars, Aa1! mix"
-            className={`input-field ${errors.password ? "input-error" : ""}`}
-            {...register("password")}
-          />
-          {errors.password && <p className="error-text">{errors.password.message}</p>}
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
+              placeholder="Min 8 chars with Aa1! mix"
+              className={`input-field pr-16 ${errors.password ? "input-error" : typed.password ? "input-valid" : ""}`}
+              {...register("password", mirror("password"))}
+            />
+            <PasswordToggle visible={showPassword} onClick={() => setShowPassword(!showPassword)} />
+          </div>
+          {errors.password && <p className="error-text">⚠ {errors.password.message}</p>}
+          <PasswordStrength password={typed.password} />
         </div>
 
         {/* Confirm */}
         <div>
           <label htmlFor="confirmPassword" className="label-text">Confirm password</label>
-          <input
-            id="confirmPassword"
-            type="password"
-            autoComplete="new-password"
-            placeholder="Repeat your password"
-            className={`input-field ${errors.confirmPassword ? "input-error" : ""}`}
-            {...register("confirmPassword")}
-          />
-          {errors.confirmPassword && <p className="error-text">{errors.confirmPassword.message}</p>}
+          <div className="relative">
+            <input
+              id="confirmPassword"
+              type={showConfirm ? "text" : "password"}
+              autoComplete="new-password"
+              placeholder="Repeat your password"
+              className={`input-field pr-16 ${
+                errors.confirmPassword
+                  ? "input-error"
+                  : typed.confirm && !errors.confirmPassword
+                    ? "input-valid"
+                    : ""
+              }`}
+              {...register("confirmPassword", mirror("confirm"))}
+            />
+            <PasswordToggle visible={showConfirm} onClick={() => setShowConfirm(!showConfirm)} />
+          </div>
+          {errors.confirmPassword && <p className="error-text">⚠ {errors.confirmPassword.message}</p>}
         </div>
 
         {/* Terms */}
         <div>
-          <label className="flex items-start gap-3 text-sm text-slate-400">
+          <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed text-slate-400">
             <input
               type="checkbox"
-              className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/10 accent-indigo-500"
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/20 bg-white/10 accent-brand-500"
               {...register("terms")}
             />
             <span>
-              I agree to the Terms of Service and Privacy Policy.
+              I agree to the{" "}
+              <span className="text-slate-300 underline decoration-white/20 underline-offset-2">
+                Terms of Service
+              </span>{" "}
+              and{" "}
+              <span className="text-slate-300 underline decoration-white/20 underline-offset-2">
+                Privacy Policy
+              </span>
+              .
             </span>
           </label>
-          {errors.terms && <p className="error-text">{errors.terms.message}</p>}
+          {errors.terms && <p className="error-text">⚠ {errors.terms.message}</p>}
         </div>
 
         <button type="submit" disabled={isSubmitting} className="btn-primary">
-          {isSubmitting ? "Creating account..." : "Create account"}
+          {isSubmitting && (
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+          )}
+          {isSubmitting ? "Creating account…" : "Create account"}
         </button>
       </form>
     </AuthLayout>

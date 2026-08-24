@@ -49,9 +49,21 @@ export function AuthProvider({ children }) {
 
   /* ---- Actions ---- */
 
-  /** POST /login → stores tokens or rethrows for the page to render errors. */
+  /**
+   * POST /login → stores tokens OR returns the 2FA hand-off:
+   *   { twoFactorRequired: true, pendingToken } when enabled for the user.
+   * Errors are rethrown so the page can render field messages.
+   */
   const login = async (payload) => {
     const { data } = await client.post("/api/auth/login", payload);
+    if (data.data?.twoFactorRequired) return data; // wait for verifyLoginOtp
+    applySession(data.data);
+    return data;
+  };
+
+  /** POST /verify-login-otp → completes a 2FA login and stores the session. */
+  const verifyLoginOtp = async (payload) => {
+    const { data } = await client.post("/api/auth/verify-login-otp", payload);
     applySession(data.data);
     return data;
   };
@@ -75,6 +87,25 @@ export function AuthProvider({ children }) {
     return data;
   };
 
+  /** POST /forgot-password — always generic (never reveals accounts). */
+  const forgotPassword = async (payload) => {
+    const { data } = await client.post("/api/auth/forgot-password", payload);
+    return data;
+  };
+
+  /** POST /reset-password — consumes the code; all sessions die. */
+  const resetPassword = async (payload) => {
+    const { data } = await client.post("/api/auth/reset-password", payload);
+    return data;
+  };
+
+  /** PATCH /2fa — flip the per-user second factor. Returns updated user. */
+  const toggleTwoFactor = async (enabled) => {
+    const { data } = await client.patch("/api/auth/2fa", { enabled });
+    if (data.data?.user) setUser(data.data.user);
+    return data;
+  };
+
   /** POST /logout → clear local state regardless of server result. */
   const logout = async () => {
     try {
@@ -86,7 +117,16 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, booting, login, register, verifyOtp, resendOtp, logout }}>
+    <AuthContext.Provider
+      value={{
+        user, booting,
+        login, verifyLoginOtp,
+        register, verifyOtp, resendOtp,
+        forgotPassword, resetPassword,
+        toggleTwoFactor,
+        logout, setUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -100,10 +100,46 @@ export const registerSchema = z
     };
   });
 
+/**
+ * Login identifier: an email address OR a phone number in any format.
+ * Transformed into { email?, phone? } so the controller can query $or.
+ */
+const identifierSchema = z
+  .string({ required_error: "Email or phone is required" })
+  .trim()
+  .min(1, "Email or phone is required")
+  .max(254, "Identifier is too long")
+  .transform((value) => {
+    // Email-shaped input passes through; anything else is parsed as a phone.
+    if (value.includes("@")) return { email: value.toLowerCase() };
+    const parsed = parsePhoneNumberFromString(value, DEFAULT_PHONE_COUNTRY);
+    if (!parsed || !parsed.isValid()) {
+      throw new z.ZodError([
+        {
+          code: z.ZodIssueCode.custom,
+          path: ["email"],
+          message: "Enter a valid email address or phone number",
+        },
+      ]);
+    }
+    return { phone: parsed.number };
+  });
+
 export const loginSchema = z.object({
-  email: emailField,
+  /** Accepts email OR phone despite the legacy field name. */
+  email: identifierSchema,
   password: z.string({ required_error: "Password is required" }).min(1, "Password is required"),
+  rememberMe: z.boolean().optional().default(false),
   captchaToken: captchaField,
+});
+
+/** POST /verify-login-otp — completes a 2FA login after the password step. */
+export const verifyLoginOtpSchema = z.object({
+  pendingToken: z
+    .string({ required_error: "Login session token is required" })
+    .min(10, "Login session token is invalid"),
+  otp: otpField,
+  rememberMe: z.boolean().optional().default(false),
 });
 
 /** POST /verify-otp — { email, otp } activates the account. */
@@ -115,6 +151,26 @@ export const verifyOtpSchema = z.object({
 /** POST /resend-otp — { email }. */
 export const resendOtpSchema = z.object({
   email: emailField,
+});
+
+/** POST /forgot-password — always answers generically (no user enumeration). */
+export const forgotPasswordSchema = z.object({
+  email: emailField,
+});
+
+/**
+ * POST /reset-password — consumes the emailed code and sets a new password
+ * (same complexity policy as registration).
+ */
+export const resetPasswordSchema = z.object({
+  email: emailField,
+  otp: otpField,
+  newPassword: passwordField,
+});
+
+/** PATCH /2fa — flip the per-user second factor on/off. */
+export const twoFactorSchema = z.object({
+  enabled: z.boolean({ required_error: "enabled must be true or false" }),
 });
 
 /* ------------------------------------------------------------------ */

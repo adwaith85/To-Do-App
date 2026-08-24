@@ -70,6 +70,13 @@ const userSchema = new mongoose.Schema(
     /* ---- Verification state ---- */
     isEmailVerified: { type: Boolean, default: false },
 
+    /**
+     * Optional second factor. When true, a successful password check does
+     * NOT create a session — instead a short-lived pending token is issued
+     * and a 6-digit code is emailed; POST /verify-login-otp completes it.
+     */
+    twoFactorEnabled: { type: Boolean, default: false },
+
     role: {
       type: String,
       enum: ["user", "admin"],
@@ -79,13 +86,26 @@ const userSchema = new mongoose.Schema(
     /* ---- Brute-force protection (account lockout) ---- */
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date, default: null },
+    lastLoginAt: { type: Date, default: null },
 
     /**
-     * Hashed refresh tokens — one per active device/session.
-     * Capped at MAX_DEVICES; oldest sessions are evicted first.
+     * Active sessions — one entry per logged-in DEVICE.
+     * Only the SHA-256 HASH of each refresh token is kept, plus just enough
+     * context to power the "Devices & sessions" management screen:
+     *   _id        → public session id used by DELETE /sessions/:id
+     *   ip/device  → so the user can recognize the device
+     *   rememberMe → whether this cookie lives 30 days or 7
      */
     refreshTokens: {
-      type: [String],
+      type: [
+        {
+          tokenHash: { type: String, required: true },
+          ip: { type: String, default: "unknown" },
+          device: { type: String, default: "unknown" },
+          rememberMe: { type: Boolean, default: false },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
       default: [],
     },
   },
@@ -151,9 +171,12 @@ userSchema.methods.resetLoginFailures = function () {
 /** Max concurrent device sessions before oldest are evicted. */
 const MAX_DEVICES = 10;
 
-/** Persist a new session hash, evicting the oldest beyond MAX_DEVICES. */
-userSchema.methods.addRefreshTokenHash = function (tokenHash) {
-  this.refreshTokens.unshift(tokenHash);
+/**
+ * Persist a new device session, evicting the oldest beyond MAX_DEVICES.
+ * @param {{tokenHash:string, ip?:string, device?:string, rememberMe?:boolean}} session
+ */
+userSchema.methods.addSession = function ({ tokenHash, ip = "unknown", device = "unknown", rememberMe = false }) {
+  this.refreshTokens.unshift({ tokenHash, ip, device, rememberMe });
   if (this.refreshTokens.length > MAX_DEVICES) {
     this.refreshTokens.length = MAX_DEVICES;
   }
@@ -166,8 +189,8 @@ userSchema.methods.addRefreshTokenHash = function (tokenHash) {
  */
 userSchema.statics.rotateRefreshTokenHash = function (userId, oldHash, newHash) {
   return this.updateOne(
-    { _id: userId, refreshTokens: oldHash },
-    { $set: { "refreshTokens.$": newHash } }
+    { _id: userId, "refreshTokens.tokenHash": oldHash },
+    { $set: { "refreshTokens.$.tokenHash": newHash } }
   );
 };
 

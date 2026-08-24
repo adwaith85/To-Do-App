@@ -27,6 +27,7 @@ import {
   hashToken,
 } from "../utils/jwt.util.js";
 import { ApiError } from "../utils/ApiError.js";
+import { getClientIp, getDevice } from "../utils/history.util.js";
 
 /* ------------------------------------------------------------------ */
 /* Cookie helpers                                                      */
@@ -37,19 +38,27 @@ import { ApiError } from "../utils/ApiError.js";
  * secure    → HTTPS-only in production
  * sameSite  → CSRF mitigation ("lax" blocks cross-site POSTs)
  * path      → browser only attaches it to /api/auth/* requests
+ * @param {number} [maxAgeMs] - omit for the standard 7-day lifetime;
+ *                              "Remember me" sessions pass 30 days.
  */
-export function refreshCookieOptions() {
+export function refreshCookieOptions(maxAgeMs = env.jwt.refreshTtlMs) {
   return {
     httpOnly: true,
     secure: env.isProd,
     sameSite: env.cookies.sameSite,
     path: "/api/auth",
-    maxAge: env.jwt.refreshTtlMs,
+    maxAge: maxAgeMs,
   };
 }
 
-export function setRefreshCookie(res, rawToken) {
-  res.cookie(env.cookies.refreshTokenName, rawToken, refreshCookieOptions());
+export function setRefreshCookie(res, rawToken, { rememberMe = false } = {}) {
+  res.cookie(
+    env.cookies.refreshTokenName,
+    rawToken,
+    refreshCookieOptions(
+      rememberMe ? env.jwt.refreshRememberTtlMs : env.jwt.refreshTtlMs
+    )
+  );
 }
 
 export function clearRefreshCookie(res) {
@@ -69,14 +78,24 @@ export function getRefreshTokenFromRequest(req) {
 /**
  * Create a brand-new session for `user`:
  * access token (returned to client) + refresh token (httpOnly cookie).
+ *
+ * @param {object} user
+ * @param {import("express").Request} req  - for the session's IP/device stamp
+ * @param {import("express").Response} res
+ * @param {{rememberMe?: boolean}} [options]
  * @returns {Promise<string>} the fresh access token
  */
-export async function issueSession(user, req, res) {
+export async function issueSession(user, req, res, { rememberMe = false } = {}) {
   const accessToken = signAccessToken(user);
-  const refreshToken = signRefreshToken(user);
+  const refreshToken = signRefreshToken(user, { rememberMe });
 
-  await user.addRefreshTokenHash(hashToken(refreshToken));
-  setRefreshCookie(res, refreshToken);
+  await user.addSession({
+    tokenHash: hashToken(refreshToken),
+    ip: getClientIp(req),
+    device: getDevice(req),
+    rememberMe,
+  });
+  setRefreshCookie(res, refreshToken, { rememberMe });
 
   return accessToken;
 }
@@ -117,9 +136,9 @@ export async function rotateRefreshToken(rawToken, req, res) {
   }
 
   /* ---- 2. Unknown token (rotated away / revoked / forged) → theft ---- */
-  if (!user.refreshTokens.includes(oldHash)) {
+  if (!user.refreshTokens.some((s) => s.tokenHash === oldHash)) {
     // Replay of an already-rotated token → assume theft: kill every session.
-    const hashes = [...user.refreshTokens];
+    const hashes = user.refreshTokens.map((s) => s.tokenHash);
     await User.revokeAllRefreshTokens(user._id);
     // Blacklist them too so replays say "ended", not "suspicious", later.
     await blacklistWithUpperBound(user._id, hashes, "logout_all");
@@ -134,12 +153,22 @@ export async function rotateRefreshToken(rawToken, req, res) {
     throw ApiError.forbidden("Please verify your email first.", "EMAIL_NOT_VERIFIED");
   }
 
-  /* ---- 4. Rotation: atomically replace old hash with the new one ---- */
-  const refreshToken = signRefreshToken(user);
-  const result = await User.rotateRefreshTokenHash(
-    user._id,
-    oldHash,
-    hashToken(refreshToken)
+  /* ---- 4. Rotation: atomically replace old hash with the new one ----
+   * The replacement keeps the SAME lifetime class (7d vs 30d remember-me)
+   * and refreshes the IP/device stamp so the sessions screen stays true. */
+  const currentSession = user.refreshTokens.find((s) => s.tokenHash === oldHash);
+  const rememberMe = Boolean(currentSession?.rememberMe);
+
+  const refreshToken = signRefreshToken(user, { rememberMe });
+  const result = await User.updateOne(
+    { _id: user._id, "refreshTokens.tokenHash": oldHash },
+    {
+      $set: {
+        "refreshTokens.$.tokenHash": hashToken(refreshToken),
+        "refreshTokens.$.ip": getClientIp(req),
+        "refreshTokens.$.device": getDevice(req),
+      },
+    }
   );
 
   if (result.matchedCount === 0) {
@@ -148,7 +177,7 @@ export async function rotateRefreshToken(rawToken, req, res) {
     throw ApiError.unauthorized("Session was revoked. Please log in again.");
   }
 
-  setRefreshCookie(res, refreshToken);
+  setRefreshCookie(res, refreshToken, { rememberMe });
   const accessToken = signAccessToken(user);
 
   return { accessToken, user };
@@ -185,11 +214,56 @@ export async function revokeCurrentSession(req, res) {
   const naturalExpiry = new Date(payload.exp * 1000);
 
   await Promise.all([
-    User.updateOne({ _id: userId }, { $pull: { refreshTokens: deadHash } }),
+    User.updateOne({ _id: userId }, { $pull: { refreshTokens: { tokenHash: deadHash } } }),
     InvalidatedToken.invalidateMany(userId, [deadHash], naturalExpiry, "logout"),
   ]);
 
   return userId ?? null;
+}
+
+/**
+ * Revoke ONE device session by its public id (sessions management screen).
+ * @returns {{existed: boolean, wasCurrent: boolean}} wasCurrent=true when
+ *          the killed session belonged to the device making the request.
+ */
+export async function revokeSessionById(userId, sessionId, currentRawToken) {
+  const user = await User.findById(userId).select("+refreshTokens");
+  if (!user) return { existed: false, wasCurrent: false };
+
+  const target = user.refreshTokens.id(sessionId);
+  if (!target) return { existed: false, wasCurrent: false };
+
+  const deadHash = target.tokenHash;
+  const naturalExpiry = new Date(Date.now() + env.jwt.refreshTtlMs);
+
+  await Promise.all([
+    // Pull by HASH (string) — pulling by _id would compare a JS string
+    // against MongoDB's ObjectId type and silently match nothing.
+    User.updateOne({ _id: userId }, { $pull: { refreshTokens: { tokenHash: deadHash } } }),
+    InvalidatedToken.invalidateMany(userId, [deadHash], naturalExpiry, "session_revoked"),
+  ]);
+
+  const wasCurrent =
+    Boolean(currentRawToken) && hashToken(currentRawToken) === deadHash;
+
+  return { existed: true, wasCurrent };
+}
+
+/** Snapshot of every active device session for the management screen. */
+export async function listSessions(userId, currentRawToken) {
+  const user = await User.findById(userId).select("+refreshTokens");
+  if (!user) return [];
+
+  const currentHash = currentRawToken ? hashToken(currentRawToken) : null;
+
+  return user.refreshTokens.map((s) => ({
+    id: String(s._id),
+    ip: s.ip,
+    device: s.device,
+    rememberMe: s.rememberMe,
+    createdAt: s.createdAt,
+    current: currentHash !== null && s.tokenHash === currentHash,
+  }));
 }
 
 /** Revoke + blacklist EVERY session across all devices. */

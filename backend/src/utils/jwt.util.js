@@ -20,13 +20,44 @@ export function signAccessToken(user) {
 
 /**
  * Create a long-lived refresh token.
+ *
+ * @param {object} user
+ * @param {{rememberMe?: boolean}} [options]
+ *   rememberMe=true stretches the lifetime to the 30-day policy; the
+ *   default session lives 7 days.
  * `jti` (unique id per token) makes every refresh token distinct even when
  * issued within the same second — required for rotation tracking.
  */
-export function signRefreshToken(user) {
-  return jwt.sign({ sub: String(user._id), jti: crypto.randomUUID() }, env.jwt.refreshSecret, {
-    expiresIn: env.jwt.refreshExpiresIn,
-  });
+export function signRefreshToken(user, { rememberMe = false } = {}) {
+  return jwt.sign(
+    { sub: String(user._id), jti: crypto.randomUUID(), rem: rememberMe },
+    env.jwt.refreshSecret,
+    { expiresIn: rememberMe ? env.jwt.refreshRememberExpiresIn : env.jwt.refreshExpiresIn }
+  );
+}
+
+/**
+ * Short-lived "2FA pending" proof. Issued after the PASSWORD step of a
+ * login when twoFactorEnabled is on; carries no session power — it only
+ * lets /verify-login-otp identify WHO is trying to finish signing in.
+ */
+export function signTwoFactorPendingToken(user) {
+  return jwt.sign(
+    { sub: String(user._id), purpose: "2fa" },
+    env.jwt.accessSecret,
+    { expiresIn: env.jwt.twoFactorExpiresIn }
+  );
+}
+
+/** Verify a 2FA pending token or throw a 401 ApiError. */
+export function verifyTwoFactorPendingToken(token) {
+  try {
+    const payload = jwt.verify(token, env.jwt.accessSecret);
+    if (payload.purpose !== "2fa") throw new Error("wrong purpose");
+    return payload;
+  } catch {
+    throw ApiError.unauthorized("Login session expired. Please sign in again.", "TWO_FACTOR_EXPIRED");
+  }
 }
 
 /** Verify an access token or throw a 401 ApiError. */

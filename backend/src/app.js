@@ -13,6 +13,7 @@ import { env } from "./config/env.js";
 import authRoutes from "./routes/auth.routes.js";
 import todoRoutes from "./routes/todo.routes.js";
 import { apiLimiter } from "./middleware/rateLimiter.middleware.js";
+import { ensureCsrfCookie } from "./middleware/csrf.middleware.js";
 import { notFoundHandler, errorHandler } from "./middleware/error.middleware.js";
 
 export function createApp() {
@@ -25,6 +26,16 @@ export function createApp() {
 
   // Trust the first proxy hop so req.ip / rate limiting see real client IPs.
   if (env.isProd) app.set("trust proxy", 1);
+
+  // Production hardening: force HTTPS when the proxy tells us it was plain.
+  if (env.isProd) {
+    app.use((req, res, next) => {
+      if (req.headers["x-forwarded-proto"] === "http") {
+        return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
+      }
+      next();
+    });
+  }
 
   // Allow only the frontend origin, WITH credentials (refresh cookie).
   app.use(
@@ -40,6 +51,10 @@ export function createApp() {
 
   // Needed to read the httpOnly refresh-token cookie.
   app.use(cookieParser());
+
+  // Double-submit CSRF: make sure every visitor carries a readable token
+  // before they hit any cookie-trusting endpoint.
+  app.use(ensureCsrfCookie);
 
   /* ---- Lightweight request logger (development only) ---- */
 

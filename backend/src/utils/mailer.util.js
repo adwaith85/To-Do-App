@@ -26,7 +26,10 @@ export function smtpConfigured() {
 }
 
 /**
- * Send a verification-code email.
+ * Send a 6-digit code email for any flow (verify, 2FA, password reset).
+ * @param {string} to
+ * @param {string} code
+ * @param {string} [purposeLabel] - human phrasing embedded in the body.
  * @returns {Promise<{delivered: boolean}>}
  */
 export async function sendOtpEmail(to, code, purposeLabel = "verify your email") {
@@ -60,4 +63,50 @@ export async function sendOtpEmail(to, code, purposeLabel = "verify your email")
     html,
   });
   return { delivered: true };
+}
+
+/**
+ * Security alert: a login from a device/IP this account has never used.
+ * Fire-and-forget friendly — callers may await it but failures only log.
+ * @returns {Promise<{delivered: boolean}>}
+ */
+export async function sendNewLoginAlert(to, { ip, device, when }) {
+  if (!transporter) {
+    console.log(`[mail:dev] New-device alert for ${to} (ip=${ip}) — SMTP not configured`);
+    return { delivered: false };
+  }
+
+  const shortDevice = String(device || "unknown device").slice(0, 120);
+  const subject = "New sign-in to your Todo App account";
+  const text = [
+    `We noticed a sign-in from a device you haven't used before.`,
+    ``,
+    `When : ${when}`,
+    `Where: IP ${ip}`,
+    `What : ${shortDevice}`,
+    ``,
+    `If this was you, no action is needed.`,
+    `If NOT, reset your password immediately and sign out of all devices.`,
+  ].join("\n");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border-radius:12px;border:1px solid #fecaca;background:#fef2f2">
+      <h2 style="color:#b91c1c;margin-top:0">New device sign-in</h2>
+      <p>A device you haven't used before just signed in to your account.</p>
+      <table style="font-size:14px;color:#334155;margin:12px 0">
+        <tr><td style="padding-right:12px;color:#64748b">When</td><td>${when}</td></tr>
+        <tr><td style="padding-right:12px;color:#64748b">IP</td><td>${ip}</td></tr>
+        <tr><td style="padding-right:12px;color:#64748b">Device</td><td>${shortDevice}</td></tr>
+      </table>
+      <p>If this was you, no action is needed.<br/>
+      If not, <b>reset your password immediately</b> and sign out of all devices.</p>
+    </div>`;
+
+  try {
+    await transporter.sendMail({ from: env.smtp.from, to, subject, text, html });
+    return { delivered: true };
+  } catch (error) {
+    console.error("[mail] New-login alert failed:", error.message);
+    return { delivered: false };
+  }
 }

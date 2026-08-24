@@ -58,13 +58,21 @@ export const env = {
     accessSecret: requireSecret("JWT_ACCESS_SECRET"),
     accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || "15m",
     refreshSecret: requireSecret("JWT_REFRESH_SECRET"),
+    // Standard session = 7 days; "Remember me" extends the cookie to 30.
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d",
+    refreshRememberExpiresIn: process.env.JWT_REFRESH_REMEMBER_EXPIRES_IN || "30d",
+    // Short-lived proof that a password check passed while 2FA is pending.
+    twoFactorExpiresIn: process.env.TWO_FACTOR_PENDING_TTL || "10m",
     // Refresh TTL in ms — used for cookie Max-Age.
     refreshTtlMs: parseDurationMs(process.env.JWT_REFRESH_EXPIRES_IN || "7d"),
+    refreshRememberTtlMs: parseDurationMs(
+      process.env.JWT_REFRESH_REMEMBER_EXPIRES_IN || "30d"
+    ),
   },
 
   cookies: {
     refreshTokenName: process.env.REFRESH_TOKEN_COOKIE_NAME || "refreshToken",
+    csrfTokenName: process.env.CSRF_COOKIE_NAME || "csrfToken",
     // "lax" fits same-site deployments (localhost dev included);
     // switch to "none" (+ HTTPS) only if API and client live on different sites.
     sameSite: process.env.COOKIE_SAMESITE || "lax",
@@ -79,7 +87,7 @@ export const env = {
   /** Account lockout after repeated failed logins (brute-force defense). */
   lockout: {
     maxFailedAttempts: parseInt(process.env.MAX_FAILED_LOGIN_ATTEMPTS || "5", 10),
-    lockMinutes: parseInt(process.env.LOCK_TIME_MINUTES || "30", 10),
+    lockMinutes: parseInt(process.env.LOCK_TIME_MINUTES || "60", 10),
   },
 
   smtp: {
@@ -107,6 +115,8 @@ export const env = {
     authWindowMinutes: process.env.AUTH_RATE_LIMIT_WINDOW_MINUTES || "15",
     apiMax: process.env.API_RATE_LIMIT_MAX || "300",
     apiWindowMinutes: process.env.API_RATE_LIMIT_WINDOW_MINUTES || "15",
+    passwordResetMax: process.env.PASSWORD_RESET_RATE_LIMIT_MAX || "5",
+    passwordResetWindowMinutes: process.env.PASSWORD_RESET_RATE_LIMIT_WINDOW_MINUTES || "60",
   },
 };
 

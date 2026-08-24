@@ -1,12 +1,11 @@
 /**
  * Google reCAPTCHA v3 helper.
  *
- * Optional by design: when VITE_RECAPTCHA_SITE_KEY is not configured
- * (local development), executeCaptcha() resolves to undefined and the
- * backend skips verification. When configured, the invisible widget runs
- * on submit and its token must be sent as `captchaToken`.
+ * The site key is baked in (no env files on the frontend). When the key is
+ * empty — or cleared for local dev — executeCaptcha() resolves to
+ * undefined and the backend skips verification.
  */
-const SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || "";
+const SITE_KEY = "6Ldto5YtAAAAAK4CDU5fOGeq8GgvXaLGl7E7arO5";
 
 /** Is captcha active on this deployment? */
 export function captchaEnabled() {

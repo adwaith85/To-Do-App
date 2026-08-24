@@ -3,10 +3,12 @@
  *
  * The emailed 6-digit code activates the account; the backend then logs
  * the user straight in (access token + refresh cookie) and we redirect to
- * the todos. Includes a resend button with a cooldown timer.
+ * the todos. Includes a resend button with a cooldown timer and a
+ * dev-mode banner when SMTP is unconfigured.
  */
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 import AuthLayout from "../components/AuthLayout";
 import { useAuth } from "../context/useAuth";
 
@@ -20,15 +22,10 @@ export default function VerifyOtp() {
   const [email, setEmail] = useState(state?.email || "");
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
-  const [info, setInfo] = useState(state?.devOtp ? `Dev mode — your code is ${state.devOtp}` : "");
+  const [info, setInfo] = useState("");
   const [verifying, setVerifying] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
+  const [cooldown, setCooldown] = useState(RESEND_SECONDS);
   const inputRef = useRef(null);
-
-  // Start the resend countdown on mount (a code was just sent).
-  useEffect(() => {
-    setCooldown(RESEND_SECONDS);
-  }, []);
 
   useEffect(() => {
     if (cooldown <= 0) return undefined;
@@ -40,15 +37,23 @@ export default function VerifyOtp() {
     e.preventDefault();
     setError("");
     setInfo("");
+
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError("Enter the email you registered with.");
+      return;
+    }
+
     setVerifying(true);
     try {
       const result = await verifyOtp({ email: email.trim().toLowerCase(), otp });
 
       if (result.data?.alreadyVerified) {
-        navigate("/login", { state: { info: "Email already verified — please log in." } });
+        toast.success("Email already verified — please log in.");
+        navigate("/login");
         return;
       }
 
+      toast.success("Email verified. Welcome aboard!");
       navigate("/", { replace: true }); // fully logged in by verifyOtp()
     } catch (err) {
       setError(err.response?.data?.message || "Verification failed. Please try again.");
@@ -67,19 +72,20 @@ export default function VerifyOtp() {
       setInfo(`A new code was sent to ${email}.`);
       setCooldown(RESEND_SECONDS);
     } catch (err) {
-      setError(err.response?.data?.message || "Could not resend the code.");
+      const msg = err.response?.data?.message || "Could not resend the code.";
+      setError(msg);
       if (err.response?.status === 429) setCooldown(RESEND_SECONDS);
     }
   };
 
   return (
     <AuthLayout
-      title="Verify your email"
-      subtitle={state?.devOtp ? undefined : "Enter the 6-digit code we emailed you."}
+      title="Check your inbox"
+      subtitle={`Enter the 6-digit code we sent to${email ? ` ${email}` : " your email"}.`}
       footer={
         <>
           Wrong account?{" "}
-          <Link to="/register" className="font-medium text-indigo-400 hover:text-indigo-300">
+          <Link to="/register" className="font-semibold text-brand-400 transition hover:text-brand-300">
             Register again
           </Link>
         </>
@@ -93,8 +99,8 @@ export default function VerifyOtp() {
       )}
 
       <form onSubmit={onSubmit} className="space-y-5" noValidate>
-        {error && <div className="alert-error">{error}</div>}
-        {info && !error && <div className="alert-success">{info}</div>}
+        {error && <div className="alert-error">⚠ {error}</div>}
+        {info && !error && <div className="alert-success">✓ {info}</div>}
 
         <div>
           <label htmlFor="verify-email" className="label-text">Email</label>
@@ -104,7 +110,7 @@ export default function VerifyOtp() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className={`input-field ${!email.trim() ? "" : ""}`}
+            className="input-field"
             required
           />
         </div>
@@ -121,7 +127,7 @@ export default function VerifyOtp() {
             value={otp}
             onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
             placeholder="••••••"
-            className="input-field text-center text-2xl font-semibold tracking-[0.6em]"
+            className="otp-box tracking-[0.5em]"
             autoFocus
             required
           />
@@ -132,18 +138,19 @@ export default function VerifyOtp() {
           disabled={verifying || otp.length !== 6 || !email.trim()}
           className="btn-primary"
         >
-          {verifying ? "Verifying..." : "Verify & continue"}
+          {verifying && (
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+          )}
+          {verifying ? "Verifying…" : "Verify & continue"}
         </button>
 
         <button
           type="button"
           onClick={onResend}
           disabled={cooldown > 0}
-          className="w-full text-center text-sm text-slate-400 transition hover:text-indigo-300 disabled:cursor-not-allowed disabled:hover:text-slate-400"
+          className="w-full text-center text-sm text-slate-400 transition hover:text-brand-300 disabled:cursor-not-allowed disabled:hover:text-slate-400"
         >
-          {cooldown > 0
-            ? `Resend code in ${cooldown}s`
-            : "Didn't get it? Resend code"}
+          {cooldown > 0 ? `Resend code in ${cooldown}s` : "Didn't get it? Resend code"}
         </button>
       </form>
     </AuthLayout>

@@ -42,6 +42,18 @@ export const authLimiter = rateLimit({
   ),
 });
 
+/**
+ * Forgot/reset password: max 5 requests / IP / hour.
+ * These endpoints email real humans — a tight budget prevents mail bombing
+ * and token brute-forcing from a single machine.
+ */
+export const passwordResetLimiter = rateLimit({
+  windowMs: parseInt(env.rateLimits.passwordResetWindowMinutes, 10) * 60_000,
+  limit: parseInt(env.rateLimits.passwordResetMax, 10),
+  ...standardOptions,
+  handler: limiterHandler("Too many password reset attempts. Please try again later."),
+});
+
 /** Whole-API limiter: default 300 requests / 15 min / IP. */
 export const apiLimiter = rateLimit({
   windowMs: parseInt(env.rateLimits.apiWindowMinutes, 10) * 60_000,

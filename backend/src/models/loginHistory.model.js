@@ -18,6 +18,13 @@ export const AUDIT_ACTIONS = [
   "LOGIN_FAILED",
   "LOGIN_BLOCKED_LOCKED",     // attempt while account was locked out
   "LOGIN_BLOCKED_UNVERIFIED", // attempt before email/phone verification
+  "LOGIN_2FA_PENDING",        // password OK, waiting for the second factor
+  "LOGIN_2FA_SUCCESS",        // second factor accepted → session granted
+  "LOGIN_2FA_FAILED",         // wrong/expired 2FA code
+  "PASSWORD_RESET_REQUESTED", // forgot-password asked for a reset code
+  "PASSWORD_RESET_SUCCESS",   // password actually changed via code
+  "SESSION_REVOKED",          // one device session killed from sessions UI
+  "TWO_FACTOR_TOGGLED",       // user switched 2FA on/off
   "TOKEN_REFRESHED",
   "TOKEN_REUSE_DETECTED",     // rotated token replayed → all sessions revoked
   "LOGOUT",

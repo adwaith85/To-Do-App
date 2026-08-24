@@ -11,7 +11,7 @@
 import mongoose from "mongoose";
 import { env } from "../config/env.js";
 
-export const OTP_TYPES = ["email", "phone", "password_reset"];
+export const OTP_TYPES = ["email", "phone", "password_reset", "login_2fa"];
 
 const otpSchema = new mongoose.Schema(
   {

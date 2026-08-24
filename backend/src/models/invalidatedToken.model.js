@@ -11,7 +11,12 @@
  */
 import mongoose from "mongoose";
 
-export const INVALIDATION_REASONS = ["logout", "logout_all", "admin_revoke"];
+export const INVALIDATION_REASONS = [
+  "logout",
+  "logout_all",
+  "session_revoked", // one device killed from the sessions screen
+  "admin_revoke",
+];
 
 const invalidatedTokenSchema = new mongoose.Schema(
   {

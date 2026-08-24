@@ -1,34 +1,81 @@
 /**
  * Todos page — protected by ProtectedRoute + backend JWT auth.
- * Same features as the original app (add / toggle / delete / stats),
- * rebuilt with Tailwind and wired to the authenticated axios client
- * (Authorization header + silent refresh handled by the interceptors).
+ *
+ * Layout (xl): two columns —
+ *   left  : tasks (add / toggle / delete / stats)
+ *   right : Account & Security — profile chip, 2FA toggle,
+ *           active device sessions with per-device revoke + logout-all.
+ * All API calls ride the axios client (bearer + silent refresh).
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import client from "../api/client";
 import { useAuth } from "../context/useAuth";
 import Spinner from "../components/Spinner";
 
-export default function Todos() {
-  const { user, logout } = useAuth();
+/* Pretty-print a stored user-agent into something human. */
+function deviceLabel(ua = "") {
+  const s = ua.toLowerCase();
+  const browser =
+    s.includes("edg/") ? "Edge"
+    : s.includes("chrome") ? "Chrome"
+    : s.includes("firefox") ? "Firefox"
+    : s.includes("safari") ? "Safari"
+    : s.includes("node") ? "API client"
+    : "Browser";
+  const os =
+    s.includes("windows") ? "Windows"
+    : s.includes("mac") ? "macOS"
+    : s.includes("android") ? "Android"
+    : s.includes("iphone|ipad|ios") || /iphone|ipad/.test(s) ? "iOS"
+    : s.includes("linux") ? "Linux"
+    : "";
+  return [browser, os].filter(Boolean).join(" · ");
+}
 
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+export default function Todos() {
+  const { user, logout, toggleTwoFactor } = useAuth();
+
+  /* ---- Tasks state ---- */
   const [todos, setTodos] = useState(null); // null = still loading
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
 
-  /* ---- Load todos on mount ---- */
+  /* ---- Sessions state ---- */
+  const [sessions, setSessions] = useState(null);
+  const [revokingId, setRevokingId] = useState(null);
+
+  const loadSessions = useCallback(() => {
+    client
+      .get("/api/auth/sessions")
+      .then(({ data }) => setSessions(data.data?.sessions || []))
+      .catch(() => setSessions([]));
+  }, []);
+
+  /* ---- Load both panels on mount ---- */
   useEffect(() => {
     let cancelled = false;
     client
       .get("/api/todos")
       .then(({ data }) => !cancelled && setTodos(data.data || []))
       .catch(() => !cancelled && setTodos([]));
+    loadSessions();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadSessions]);
 
-  /* ---- Actions ---- */
+  /* ---- Task actions ---- */
 
   const addTodo = async (e) => {
     e.preventDefault();
@@ -40,8 +87,9 @@ export default function Todos() {
       const { data } = await client.post("/api/todos", { task });
       setTodos((prev) => [data.data, ...(prev || [])]);
       setInput("");
+      toast.success("Task added");
     } catch {
-      // Interceptor may refresh & retry; surface failures quietly.
+      toast.error("Could not add the task");
     } finally {
       setBusy(false);
     }
@@ -52,7 +100,7 @@ export default function Todos() {
       const { data } = await client.patch(`/api/todos/${id}`);
       setTodos((prev) => prev?.map((t) => (t._id === id ? data.data : t)));
     } catch {
-      /* noop — refresh flow handles transient 401s */
+      /* silent refresh flow handles transient 401s */
     }
   };
 
@@ -62,117 +110,277 @@ export default function Todos() {
     try {
       await client.delete(`/api/todos/${id}`);
     } catch {
-      /* noop */
+      toast.error("Could not delete the task");
     }
   };
 
-  if (todos === null) return <Spinner label="Loading your tasks..." />;
+  /* ---- Session actions ---- */
+
+  const revokeSession = async (id) => {
+    setRevokingId(id);
+    try {
+      const { data } = await client.delete(`/api/auth/sessions/${id}`);
+      toast.success(data.message || "Device signed out");
+
+      if (/^this device/i.test(data.message || "")) {
+        // We just killed OUR OWN session — refresh cookie is dead server-side.
+        await logout();
+      } else {
+        setSessions((prev) => prev?.filter((s) => s.id !== id));
+      }
+    } catch {
+      toast.error("Could not sign out that device");
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  const logoutAllDevices = async () => {
+    try {
+      await client.post("/api/auth/logout-all");
+      await logout();
+      toast.success("Signed out everywhere");
+    } catch {
+      toast.error("Could not sign out all devices");
+    }
+  };
+
+  const onToggle2fa = async (e) => {
+    const enabled = e.target.checked;
+    try {
+      const { data } = await toggleTwoFactor(enabled);
+      toast.success(data.message || `Two-factor ${enabled ? "enabled" : "disabled"}`);
+    } catch (err) {
+      e.target.checked = !enabled; // revert the switch on failure
+      toast.error(err.response?.data?.message || "Could not change 2FA setting");
+    }
+  };
+
+  if (todos === null) return <Spinner label="Loading your workspace..." />;
 
   const completedCount = todos.filter((t) => t.status === "completed").length;
 
   return (
-    <div className="flex min-h-screen flex-col items-center px-4 py-10">
-      {/* Top bar */}
-      <div className="mb-8 flex w-full max-w-xl items-center justify-between">
-        <div>
-          <h1 className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-2xl font-bold text-transparent">
-            Secure Todo
-          </h1>
-          <p className="text-xs text-slate-400">
-            Welcome back, {user?.name}
-          </p>
+    <div className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 sm:px-6">
+      {/* ── Top bar ── */}
+      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-accent-500 text-lg font-black text-white shadow-glow">
+            ✓
+          </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">SecureTodo</h1>
+            <p className="text-xs text-slate-400">
+              Welcome back, <span className="text-slate-200">{user?.name}</span>
+            </p>
+          </div>
         </div>
-        <button onClick={logout} className="btn-ghost border border-white/10">
+
+        <button onClick={logout} className="btn-secondary">
           Log out
         </button>
-      </div>
+      </header>
 
-      {/* Card */}
-      <div className="glass-card max-w-xl p-6 sm:p-8">
-        {/* Stats */}
-        <div className="mb-6 flex justify-around rounded-xl border border-white/10 bg-white/[0.02] py-3 text-sm text-slate-400">
-          <span><b className="text-white">{todos.length}</b> Total</span>
-          <span><b className="text-emerald-400">{completedCount}</b> Completed</span>
-        </div>
-
-        {/* Add form */}
-        <form onSubmit={addTodo} className="mb-8 flex gap-3">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Add a new task..."
-            maxLength={200}
-            className="input-field"
-          />
-          <button
-            type="submit"
-            disabled={busy || !input.trim()}
-            className="shrink-0 rounded-xl bg-indigo-500 px-5 text-sm font-semibold transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Add
-          </button>
-        </form>
-
-        {/* List */}
-        {todos.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/10 px-6 py-12 text-center italic text-slate-500">
-            No tasks yet. Add one to get started!
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {todos.map((todo) => (
-              <li
-                key={todo._id}
-                className="group flex items-center gap-4 rounded-2xl border border-transparent bg-white/[0.03] px-5 py-4 transition hover:scale-[1.01] hover:border-white/10 hover:bg-white/[0.06]"
-              >
-                {/* Custom checkbox */}
-                <label className="flex cursor-pointer items-center gap-4">
-                  <input
-                    type="checkbox"
-                    checked={todo.status === "completed"}
-                    onChange={() => toggleTodo(todo._id)}
-                    className="peer sr-only"
-                  />
-                  <span
-                    className={`
-                      flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-white/20 text-[11px] text-transparent transition
-                      peer-checked:border-emerald-500 peer-checked:bg-emerald-500 peer-checked:text-white
-                      hover:border-indigo-400
-                    `}
-                  >
-                    ✓
-                  </span>
-                </label>
-
-                {/* Task label with animated strike-through */}
-                <span
-                  className={`relative min-w-0 flex-1 break-words ${
-                    todo.status === "completed" ? "text-slate-500" : "text-slate-100"
-                  }`}
-                >
-                  {todo.task}
-                  {todo.status === "completed" && (
-                    <span className="absolute left-0 top-1/2 h-px w-full bg-slate-500" />
-                  )}
-                </span>
-
-                {/* Delete */}
-                <button
-                  onClick={() => deleteTodo(todo._id)}
-                  title="Delete task"
-                  aria-label={`Delete ${todo.task}`}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 text-sm text-rose-400 opacity-0 transition group-hover:opacity-100 hover:rotate-90 hover:bg-rose-500 hover:text-white focus:opacity-100"
-                >
-                  ✕
-                </button>
-              </li>
+      <div className="grid items-start gap-6 lg:grid-cols-[1.5fr_1fr]">
+        {/* ══════════ TASKS ══════════ */}
+        <section className="glass-card p-6 sm:p-8">
+          {/* Stats */}
+          <div className="mb-6 grid grid-cols-3 gap-3 text-center">
+            {[
+              { label: "Total", value: todos.length, tone: "text-white" },
+              { label: "Completed", value: completedCount, tone: "text-emerald-400" },
+              { label: "Open", value: todos.length - completedCount, tone: "text-accent-400" },
+            ].map((s) => (
+              <div key={s.label} className="rounded-2xl border border-white/5 bg-white/[0.03] py-4">
+                <div className={`text-2xl font-extrabold ${s.tone}`}>{s.value}</div>
+                <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  {s.label}
+                </div>
+              </div>
             ))}
-          </ul>
-        )}
+          </div>
+
+          {/* Add form */}
+          <form onSubmit={addTodo} className="mb-7 flex gap-3">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="What needs doing?"
+              maxLength={200}
+              className="input-field"
+            />
+            <button
+              type="submit"
+              disabled={busy || !input.trim()}
+              className="btn-primary w-auto shrink-0 px-6"
+            >
+              Add
+            </button>
+          </form>
+
+          {/* List */}
+          {todos.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-white/10 px-6 py-14 text-center">
+              <div className="mb-2 text-3xl">🌤️</div>
+              <p className="italic text-slate-500">Nothing yet — add your first task above.</p>
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-2.5">
+              {todos.map((todo) => (
+                <li
+                  key={todo._id}
+                  className="group flex items-center gap-4 rounded-2xl border border-transparent bg-white/[0.03] px-5 py-4 transition hover:border-white/10 hover:bg-white/[0.06]"
+                >
+                  {/* Custom checkbox */}
+                  <label className="flex cursor-pointer items-center gap-4">
+                    <input
+                      type="checkbox"
+                      checked={todo.status === "completed"}
+                      onChange={() => toggleTodo(todo._id)}
+                      className="peer sr-only"
+                    />
+                    <span
+                      className={`
+                        flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-white/20 text-[11px] text-transparent transition
+                        peer-checked:border-emerald-500 peer-checked:bg-emerald-500 peer-checked:text-white
+                        hover:border-brand-400
+                      `}
+                    >
+                      ✓
+                    </span>
+                  </label>
+
+                  {/* Task label with animated strike-through */}
+                  <span
+                    className={`relative min-w-0 flex-1 break-words ${
+                      todo.status === "completed" ? "text-slate-500" : "text-slate-100"
+                    }`}
+                  >
+                    {todo.task}
+                    {todo.status === "completed" && (
+                      <span className="absolute left-0 top-1/2 h-px w-full bg-slate-500" />
+                    )}
+                  </span>
+
+                  {/* Delete */}
+                  <button
+                    onClick={() => deleteTodo(todo._id)}
+                    title="Delete task"
+                    aria-label={`Delete ${todo.task}`}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 text-sm text-rose-400 opacity-0 transition group-hover:opacity-100 hover:rotate-90 hover:bg-rose-500 hover:text-white focus:opacity-100"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* ══════════ ACCOUNT & SECURITY ══════════ */}
+        <aside className="space-y-6">
+          {/* Profile card */}
+          <section className="glass-card p-6">
+            <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400">
+              Account
+            </h2>
+            <div className="space-y-2 text-sm">
+              <p className="flex justify-between gap-3">
+                <span className="text-slate-500">Name</span>
+                <span className="truncate font-medium">{user?.name}</span>
+              </p>
+              <p className="flex justify-between gap-3">
+                <span className="text-slate-500">Email</span>
+                <span className="truncate font-medium">{user?.email}</span>
+              </p>
+              <p className="flex justify-between gap-3">
+                <span className="text-slate-500">Phone</span>
+                <span className="font-medium">{user?.phone}</span>
+              </p>
+            </div>
+          </section>
+
+          {/* Two-factor switch */}
+          <section className="glass-card p-6">
+            <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400">
+              Security
+            </h2>
+            <label className="flex cursor-pointer items-start justify-between gap-4">
+              <span>
+                <span className="block text-sm font-semibold">Two-factor login</span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-slate-400">
+                  Email a code at every sign-in, after your password.
+                </span>
+              </span>
+              <span className="relative inline-flex shrink-0">
+                <input
+                  type="checkbox"
+                  checked={Boolean(user?.twoFactorEnabled)}
+                  onChange={onToggle2fa}
+                  className="peer sr-only"
+                />
+                <span className="block h-6 w-11 rounded-full bg-white/15 transition peer-checked:bg-brand-500" />
+                <span className="pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
+              </span>
+            </label>
+          </section>
+
+          {/* Active sessions */}
+          <section className="glass-card p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">
+                Devices & sessions
+              </h2>
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-slate-400">
+                {sessions?.length ?? "…"} active
+              </span>
+            </div>
+
+            {!sessions ? (
+              <p className="py-4 text-sm text-slate-500">Loading sessions…</p>
+            ) : sessions.length === 0 ? (
+              <p className="py-4 text-sm text-slate-500">No other active sessions.</p>
+            ) : (
+              <ul className="space-y-2.5">
+                {sessions.map((s) => (
+                  <li key={s.id} className="list-row">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-2 text-sm font-semibold">
+                        {deviceLabel(s.device)}
+                        {s.current && (
+                          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-400">
+                            this device
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        IP {s.ip} · signed in {timeAgo(s.createdAt)}
+                        {s.rememberMe && " · remembered"}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => revokeSession(s.id)}
+                      disabled={revokingId === s.id}
+                      className="btn-danger shrink-0"
+                    >
+                      {revokingId === s.id ? "…" : "Sign out"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <button onClick={logoutAllDevices} className="btn-secondary mt-5 w-full">
+              Sign out of ALL devices
+            </button>
+          </section>
+        </aside>
       </div>
 
-      <p className="mt-8 text-xs text-slate-500">Session secured by JWT · access tokens rotate silently</p>
+      <p className="mt-10 pb-4 text-center text-xs text-slate-600">
+        Session secured by rotating JWT tokens · logged-out tokens are permanently blacklisted
+      </p>
     </div>
   );
 }
