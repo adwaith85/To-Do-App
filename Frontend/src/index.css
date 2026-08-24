@@ -1,9 +1,72 @@
-/* Base styles are now handled in App.css */
-:root {
-  color-scheme: dark;
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- Global base ---------- */
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply min-h-screen bg-[#1e1b4b] font-sans text-slate-100 antialiased;
+    background-image:
+      radial-gradient(circle at top right, rgba(99, 102, 241, 0.18), transparent 55%),
+      radial-gradient(circle at bottom left, rgba(168, 85, 247, 0.15), transparent 55%);
+    background-attachment: fixed;
+  }
 }
 
-body {
-  margin: 0;
-  padding: 0;
+/* ---------- Reusable component classes ---------- */
+@layer components {
+  /* Glass card used by auth pages + todo app */
+  .glass-card {
+    @apply w-full rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-10;
+  }
+
+  /* Form controls */
+  .input-field {
+    @apply w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-indigo-500 focus:bg-white/[0.07] focus:ring-4 focus:ring-indigo-500/10;
+  }
+  .input-error {
+    @apply border-rose-500/60 focus:border-rose-500 focus:ring-rose-500/10;
+  }
+  .label-text {
+    @apply mb-1.5 block text-sm font-medium text-slate-300;
+  }
+  .error-text {
+    @apply mt-1 text-xs text-rose-400;
+  }
+  .btn-primary {
+    @apply w-full rounded-xl bg-indigo-500 py-3 text-sm font-semibold tracking-wide text-white transition hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/30 focus:outline-none focus:ring-4 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply rounded-lg px-3 py-2 text-sm text-slate-300 transition hover:bg-white/10 hover:text-white;
+  }
+
+  /* Alert banners */
+  .alert-error {
+    @apply rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300;
+  }
+  .alert-success {
+    @apply rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300;
+  }
+  .alert-info {
+    @apply rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-300;
+  }
+}
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-white/10;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/20;
 }
