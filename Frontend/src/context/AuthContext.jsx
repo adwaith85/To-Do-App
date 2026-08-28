@@ -12,6 +12,7 @@
 import { useEffect, useState, useCallback } from "react";
 import client, { setAccessToken } from "../api/client";
 import { AuthContext } from "./authContext";
+import { clearRemembered } from "../utils/rememberMe";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -68,9 +69,15 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  /** POST /register → returns response (may include devOtp in dev). */
+  /** POST /register → step 1 of signup (name/email/phone, NO password). */
   const register = async (payload) => {
     const { data } = await client.post("/api/auth/register", payload);
+    return data;
+  };
+
+  /** POST /set-password → final signup step (email verified before this). */
+  const setPassword = async (payload) => {
+    const { data } = await client.post("/api/auth/set-password", payload);
     return data;
   };
 
@@ -106,11 +113,13 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  /** POST /logout → clear local state regardless of server result. */
+  /** POST /logout → clear local state regardless of server result.
+   * Also forgets any remember-me credentials stored on this device. */
   const logout = async () => {
     try {
       await client.post("/api/auth/logout");
     } finally {
+      clearRemembered();
       setAccessToken(null);
       setUser(null);
     }
@@ -121,7 +130,7 @@ export function AuthProvider({ children }) {
       value={{
         user, booting,
         login, verifyLoginOtp,
-        register, verifyOtp, resendOtp,
+        register, setPassword, verifyOtp, resendOtp,
         forgotPassword, resetPassword,
         toggleTwoFactor,
         logout, setUser,

@@ -15,7 +15,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { verifyPassword } from "../utils/password.util.js";
 import { logAuthEvent, getClientIp, getDevice } from "../utils/history.util.js";
-import { assertCaptcha } from "../utils/captcha.util.js";
+import { assertCaptcha, verifyCaptcha } from "../utils/captcha.util.js";
 import { sendNewLoginAlert, sendOtpEmail } from "../utils/mailer.util.js";
 import {
   issueSession,
@@ -35,6 +35,8 @@ import {
 import {
   signTwoFactorPendingToken,
   verifyTwoFactorPendingToken,
+  signSignupToken,
+  verifySignupToken,
 } from "../utils/jwt.util.js";
 
 /* ------------------------------------------------------------------ */
@@ -43,13 +45,14 @@ import {
 
 /**
  * Create an UNVERIFIED user and email them a verification code.
- * The account stays inactive until POST /verify-otp succeeds.
+ * The account starts WITHOUT a password — step 1 of the signup wizard:
+ *   register (name/email/phone) → verify-otp → set-password → login
  *
  * Protections: reCAPTCHA (optional), register rate limit (5/h/IP),
- * duplicate email/phone check, bcrypt hashing via the model hook.
+ * duplicate email/phone check.
  */
 export const register = asyncHandler(async (req, res) => {
-  const { name, email, phone, countryCode, password, captchaToken } = req.body;
+  const { name, email, phone, countryCode, captchaToken } = req.body;
 
   await assertCaptcha(captchaToken, "register");
 
@@ -62,8 +65,8 @@ export const register = asyncHandler(async (req, res) => {
     throw ApiError.conflict("An account with this email or phone already exists. Try logging in.");
   }
 
-  // isEmailVerified stays false until OTP verification completes.
-  const user = await User.create({ name, email, phone, countryCode, password });
+  // isEmailVerified stays false; password is set after verification.
+  const user = await User.create({ name, email, phone, countryCode });
 
   const { delivered, devCode } = await issueOtp("email", email);
 
@@ -88,13 +91,16 @@ export const register = asyncHandler(async (req, res) => {
 /* ------------------------------------------------------------------ */
 
 /**
- * Exchange the emailed code for an activated account.
- * On success the user is logged in immediately (session pair issued).
+ * Exchange the emailed code for an activated account — the middle step of
+ * the signup wizard. When the account still has NO password (the normal
+ * signup path) this returns a short-lived signupToken instead of a session,
+ * so the SAME page can immediately collect the password (set-password).
+ * Accounts that already carry a password are logged in as before.
  */
 export const verifyOtp = asyncHandler(async (req, res) => {
   const { email, otp } = req.body;
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email }).select("+password");
   if (!user) throw ApiError.badRequest("Invalid or expired verification code.");
 
   if (user.isEmailVerified) {
@@ -116,17 +122,60 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   }
 
   user.isEmailVerified = true;
-  user.lastLoginAt = new Date();
+  const finishLogin = Boolean(user.password); // legacy accounts verify WITH a password
+  if (finishLogin) user.lastLoginAt = new Date();
   await user.save();
-
-  const accessToken = await issueSession(user, req, res);
 
   await logAuthEvent({ userId: user._id, action: "EMAIL_VERIFY_SUCCESS", req });
 
+  if (finishLogin) {
+    const accessToken = await issueSession(user, req, res);
+    return res.status(200).json({
+      success: true,
+      message: "Email verified successfully. Welcome!",
+      data: { user, accessToken },
+    });
+  }
+
+  // Verify → password step: the wizard stays on the same page.
+  const signupToken = signSignupToken(user);
   res.status(200).json({
     success: true,
-    message: "Email verified successfully. Welcome!",
-    data: { user, accessToken },
+    message: "Email verified. Now create your password to finish.",
+    data: { verified: true, signupToken },
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* POST /api/auth/set-password                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Final step of signup: the email was just verified (signupToken proves
+ * it), so the user picks a password. No session is minted — the wizard
+ * redirects to /login afterwards, per the requested flow.
+ */
+export const setPassword = asyncHandler(async (req, res) => {
+  const { signupToken, password } = req.body;
+
+  const payload = verifySignupToken(signupToken); // throws 400 SIGNUP_TOKEN_EXPIRED
+
+  const user = await User.findById(payload.sub).select("+password");
+  if (!user || !user.isEmailVerified) {
+    throw ApiError.badRequest("Account not found. Please register again.");
+  }
+  if (user.password) {
+    throw ApiError.badRequest("A password already exists for this account. Log in instead.");
+  }
+
+  user.password = password; // pre-save hook hashes it (bcrypt 12)
+  await user.save();
+
+  await logAuthEvent({ userId: user._id, action: "PASSWORD_CREATED", req });
+
+  res.status(200).json({
+    success: true,
+    message: "Registered successfully. You can now log in with your email and password.",
   });
 });
 
@@ -239,9 +288,18 @@ async function grantLoginSession(user, req, res, { rememberMe = false }) {
 export const login = asyncHandler(async (req, res) => {
   // Zod normalized the identifier into {email} OR {phone}.
   const identifier = req.body.email;
-  const { password, rememberMe, captchaToken } = req.body;
+  const { password, rememberMe, captchaToken, captcha } = req.body;
 
   await assertCaptcha(captchaToken, "login");
+
+  // Visual captcha gate runs BEFORE any credential work.
+  if (!captcha || !verifyCaptcha(captcha.token, captcha.text)) {
+    throw ApiError.badRequest(
+      "Captcha code is incorrect. Please try again.",
+      [],
+      "CAPTCHA_FAILED"
+    );
+  }
 
   const query = identifier.email ? { email: identifier.email } : { phone: identifier.phone };
 

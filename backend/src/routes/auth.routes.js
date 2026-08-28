@@ -35,10 +35,12 @@ import {
   toggleTwoFactor,
   forgotPassword,
   resetPassword,
+  setPassword,
 } from "../controllers/auth.controller.js";
 import { adminPing } from "../controllers/admin.controller.js";
 import {
   registerSchema,
+  setPasswordSchema,
   loginSchema,
   verifyOtpSchema,
   resendOtpSchema,
@@ -48,13 +50,23 @@ import {
   twoFactorSchema,
   mongoIdParamSchema,
 } from "../validations/index.js";
+import { createCaptcha } from "../utils/captcha.util.js";
 
 const router = Router();
 
+/* Public — visual captcha used by the login screen. */
+router.get("/captcha", (req, res) => {
+  const { svg, token, expiresIn } = createCaptcha();
+  res.status(200).json({ success: true, data: { svg, token, expiresIn } });
+});
+
 /* Public — account creation & verification. */
-router.post("/register",   registerLimiter, sanitize, validate({ body: registerSchema }), register);
-router.post("/verify-otp", authLimiter,     sanitize, validate({ body: verifyOtpSchema }), verifyOtp);
-router.post("/resend-otp", authLimiter,     sanitize, validate({ body: resendOtpSchema }), resendOtp);
+router.post("/register",     registerLimiter, sanitize, validate({ body: registerSchema }), register);
+router.post("/verify-otp",   authLimiter,     sanitize, validate({ body: verifyOtpSchema }), verifyOtp);
+router.post("/resend-otp",   authLimiter,     sanitize, validate({ body: resendOtpSchema }), resendOtp);
+
+/* Public — finish signup (email verified → password chosen on same page). */
+router.post("/set-password", authLimiter, sanitize, validate({ body: setPasswordSchema }), setPassword);
 
 /* Public — login (+ optional second factor) and password reset. */
 router.post("/login",              authLimiter, sanitize, validate({ body: loginSchema }), login);

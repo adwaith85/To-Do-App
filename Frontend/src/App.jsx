@@ -20,15 +20,26 @@ import Todos from "./pages/Todos";
 export default function App() {
   return (
     <BrowserRouter>
-      {/* Global toast notifications */}
+      {/* Global toast notifications — compact, frosted-glass style */}
       <Toaster
         position="top-center"
         toastOptions={{
+          duration: 2200,
           style: {
-            background: "#18213c",
+            background: "rgba(16, 23, 44, 0.88)",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
             color: "#e2e8f0",
-            border: "1px solid rgba(255,255,255,0.1)",
+            border: "1px solid rgba(255,255,255,0.14)",
             fontFamily: "Outfit, sans-serif",
+            fontSize: "12px",
+            lineHeight: "18px",
+            fontWeight: 500,
+            padding: "7px 10px",
+            minWidth: "auto",
+            maxWidth: "300px",
+            borderRadius: "10px",
+            boxShadow: "0 8px 24px -6px rgba(0,0,0,0.65)",
           },
           success: { iconTheme: { primary: "#34d399", secondary: "#10172c" } },
           error: { iconTheme: { primary: "#fb7185", secondary: "#10172c" } },

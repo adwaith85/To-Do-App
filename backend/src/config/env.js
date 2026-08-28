@@ -48,8 +48,7 @@ export const env = {
   // MongoDB connection string.
   mongoUri:
     process.env.MONGO_URI ||
-    process.env.MONGO_URL ||
-    "mongodb://127.0.0.1:27017/todoapp",
+    process.env.MONGO_URL,
 
   // Frontend origin allowed by CORS.
   clientUrl: process.env.CLIENT_URL || "http://localhost:5173",

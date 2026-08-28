@@ -60,6 +60,34 @@ export function verifyTwoFactorPendingToken(token) {
   }
 }
 
+/**
+ * Short-lived "email verified" proof used by the signup wizard. Issued by
+ * /verify-otp for accounts WITHOUT a password yet; authorizes the very next
+ * step (POST /set-password) to create the password. Grants nothing else.
+ */
+export function signSignupToken(user) {
+  return jwt.sign(
+    { sub: String(user._id), purpose: "signup" },
+    env.jwt.accessSecret,
+    { expiresIn: env.jwt.twoFactorExpiresIn }
+  );
+}
+
+/** Verify a signup token or throw a 400 ApiError. */
+export function verifySignupToken(token) {
+  try {
+    const payload = jwt.verify(token, env.jwt.accessSecret);
+    if (payload.purpose !== "signup") throw new Error("wrong purpose");
+    return payload;
+  } catch {
+    throw ApiError.badRequest(
+      "This verification has expired. Please register again.",
+      [],
+      "SIGNUP_TOKEN_EXPIRED"
+    );
+  }
+}
+
 /** Verify an access token or throw a 401 ApiError. */
 export function verifyAccessToken(token) {
   try {

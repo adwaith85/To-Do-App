@@ -2,9 +2,11 @@
  * Shared layout for every auth page (Login / Register / VerifyOtp /
  * ForgotPassword / ResetPassword).
  *
- * Professional split-screen composition:
- *   left  → brand showcase panel (aurora gradient, feature highlights)
- *   right → the form card itself
+ * "Liquid glass" composition:
+ *   - dark translucent panels (frosted glass) over animated colour blobs,
+ *     deliberately neither pure black nor white
+ *   - left  → brand showcase panel (glowing gradient, feature highlights)
+ *   - right → the form card itself
  * Collapses to a single centered card on small screens.
  */
 
@@ -28,11 +30,20 @@ const FEATURES = [
 
 export default function AuthLayout({ title, subtitle, children, footer }) {
   return (
-    <div className="flex min-h-screen items-center justify-center p-4 sm:p-8">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.02] shadow-2xl shadow-black/60 backdrop-blur-xl lg:grid-cols-[1.05fr_1fr]">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4 sm:p-8">
+      {/* ── Liquid glow background ── */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-32 -left-32 h-[28rem] w-[28rem] rounded-full bg-brand-500/30 blur-[110px] animate-liquid-glow" />
+        <div className="absolute top-1/4 -right-24 h-[24rem] w-[24rem] rounded-full bg-accent-400/25 blur-[110px] animate-liquid-glow-slow" />
+        <div className="absolute -bottom-40 left-1/4 h-[26rem] w-[26rem] rounded-full bg-[#e8627f]/25 blur-[120px] animate-liquid-glow" />
+        <div className="absolute -bottom-20 right-1/4 h-[20rem] w-[20rem] rounded-full bg-[#fbbf24]/15 blur-[100px] animate-liquid-glow-slow" />
+      </div>
+
+      {/* ── Frosted glass card ── */}
+      <div className="liquid-glass relative grid w-full max-w-5xl lg:grid-cols-[1.05fr_1fr]">
 
         {/* ── Brand showcase (desktop) ── */}
-        <aside className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-800/60 via-brand-950/80 to-ink-950 p-10 lg:flex">
+        <aside className="relative hidden flex-col justify-between overflow-hidden p-10 lg:flex">
           <div
             aria-hidden
             className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-brand-500/25 blur-3xl"
@@ -52,9 +63,11 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
 
             <h2 className="mt-12 text-3xl font-extrabold leading-tight tracking-tight">
               Stay on top of everything,
-              <span className="bg-gradient-to-r from-brand-300 to-accent-400 bg-clip-text text-transparent"> worry-free.</span>
+              <span className="bg-gradient-to-r from-brand-300 via-accent-300 to-[#ff8fa3] bg-clip-text text-transparent">
+                worry-free.
+              </span>
             </h2>
-            <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-400">
+            <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-300/80">
               Your tasks, protected by a security stack usually reserved for
               banks — so you can focus on what matters.
             </p>
@@ -76,7 +89,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
         </aside>
 
         {/* ── Form side ── */}
-        <main className="flex flex-col justify-center bg-ink-950/40 p-6 sm:p-10">
+        <main className="relative flex flex-col justify-center bg-white/[0.03] p-6 sm:p-10">
           {/* Compact brand mark for mobile */}
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-400 to-accent-500 text-base font-black text-white">

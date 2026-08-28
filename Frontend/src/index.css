@@ -63,6 +63,46 @@
     @apply w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-10;
   }
 
+  /* "Liquid glass" auth card — translucent dark, never pure white/black */
+  .liquid-glass {
+    border-radius: 2rem;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    background:
+      radial-gradient(120% 120% at 100% 0%, rgb(232 98 127 / 0.16), transparent 55%),
+      linear-gradient(135deg, rgb(96 66 232 / 0.26), rgb(16 23 44 / 0.55) 45%, rgb(9 14 32 / 0.5));
+    -webkit-backdrop-filter: blur(30px);
+    backdrop-filter: blur(30px);
+    box-shadow:
+      0 30px 80px -20px rgb(0 0 0 / 0.75),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.12),
+      inset 0 -1px 0 0 rgb(255 255 255 / 0.04);
+    overflow: hidden;
+  }
+
+  /* reCAPTCHA-style "I am not a robot" panel — classic white box, black text */
+  .captcha-panel {
+    @apply rounded-lg border border-[#d9d9d9] bg-white px-4 py-3 shadow-sm transition;
+  }
+  .captcha-error {
+    @apply border-rose-400 ring-1 ring-rose-300;
+  }
+  .robot-check {
+    @apply flex h-[18px] w-[18px] items-center justify-center rounded-[3px] border border-[#c1c1c1] bg-white transition;
+  }
+  .robot-check:hover {
+    @apply border-[#8f8f8f];
+  }
+  .robot-check-on {
+    @apply border-[#4285f4] bg-[#4285f4];
+  }
+  .captcha-image {
+    @apply overflow-hidden rounded-lg border border-[#e5e7eb] bg-white shadow-sm;
+    line-height: 0;
+  }
+  .captcha-image svg {
+    display: block;
+  }
+
   /* Form controls — red border on error, brand ring on focus,
      green border once a field becomes valid (validation states). */
   .input-field {
@@ -135,4 +175,20 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-white/20;
+}
+
+/* ---------- Liquid background drift ---------- */
+@keyframes liquid-glow {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(24px, -18px) scale(1.12); }
+}
+@keyframes liquid-glow-slow {
+  0%, 100% { transform: translate(0, 0) scale(1.05); }
+  50%      { transform: translate(-28px, 20px) scale(0.94); }
+}
+.animate-liquid-glow {
+  animation: liquid-glow 12s ease-in-out infinite;
+}
+.animate-liquid-glow-slow {
+  animation: liquid-glow-slow 17s ease-in-out infinite;
 }

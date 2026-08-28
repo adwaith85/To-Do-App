@@ -1,30 +1,40 @@
 /**
  * Login page.
  *
- * Step 1 — email/phone + password (+ show/hide, Remember Me, captcha).
+ * Step 1 — email/phone + password + human-check captcha.
+ *   Human check: reCAPTCHA-style "I am not a robot" checkbox backed by a
+ *   self-hosted visual captcha (image code). The backend verifies the code
+ *   BEFORE touching credentials (captcha → password → validation → policy).
  *   → When the account has 2FA enabled the backend answers with
  *     { twoFactorRequired, pendingToken } and we reveal STEP 2 inline:
  *     a 6-digit email code that completes the sign-in.
  *
  * Error choreography:
- *   ACCOUNT_LOCKED (423)   → amber banner with minutes remaining
- *   EMAIL_NOT_VERIFIED(403)→ routed to /verify-otp with the email
+ *   CAPTCHA_FAILED (400 with code) → refresh image, clear the code input
+ *   ACCOUNT_LOCKED (423)           → amber banner with minutes remaining
+ *   EMAIL_NOT_VERIFIED (403)       → routed to /verify-otp with the email
  */
-import { useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import client from "../api/client";
 import AuthLayout from "../components/AuthLayout";
 import { useAuth } from "../context/useAuth";
-import { executeCaptcha } from "../utils/captcha";
+import { getRemembered, setRemembered, clearRemembered } from "../utils/rememberMe";
 
+/* ---- Local validation mirroring the backend Zod rules ---- */
 const loginSchema = z.object({
   // Accepts an email OR a phone number — the backend normalizes both.
   identifier: z.string().trim().min(3, "Enter your email or phone number"),
   password: z.string().min(1, "Password is required"),
   rememberMe: z.boolean(),
+  notRobot: z.boolean().refine((v) => v === true, {
+    message: "Confirm you are not a robot",
+  }),
+  captchaText: z.string().trim().min(1, "Enter the captcha code"),
 });
 
 const OTP_SHAPE = z.string().regex(/^\d{6}$/, "Enter the 6-digit code");
@@ -42,29 +52,86 @@ export default function Login() {
   const [rememberMeChosen, setRememberMeChosen] = useState(false);
   const [verifying2fa, setVerifying2fa] = useState(false);
 
+  /* ---- Visual captcha state ---- */
+  const [captcha, setCaptcha] = useState(null);    // { svg, token }
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [captchaError, setCaptchaError] = useState("");
+
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(loginSchema),
-    defaultValues: { identifier: "", password: "", rememberMe: false },
+    defaultValues: {
+      identifier: "", password: "", rememberMe: false,
+      notRobot: false, captchaText: "",
+    },
   });
+
+  const notRobot = watch("notRobot");
+
+  /* ---- Remember-me device persistence ----
+   * Pre-fill identifier + password (and keep the box ticked) on devices
+   * that signed in with Remember Me, until the box is unchecked or the
+   * user logs out. */
+  useEffect(() => {
+    const saved = getRemembered();
+    if (saved) {
+      setValue("identifier", saved.identifier);
+      setValue("password", saved.password);
+      setValue("rememberMe", true);
+    }
+  }, [setValue]);
+
+  /** Unmarking Remember Me forgets the stored credentials immediately. */
+  const onRememberChange = (e) => {
+    if (!e.target.checked) clearRemembered();
+  };
+
+  /** After a successful credential grant, persist when Remember Me is on. */
+  const persistRemembered = (vals) => {
+    if (vals.rememberMe) setRemembered(vals.identifier, vals.password);
+    else clearRemembered();
+  };
+
+  /** Pull a fresh captcha image + token from the API. */
+  const refreshCaptcha = useCallback(async () => {
+    setCaptchaLoading(true);
+    try {
+      const { data } = await client.get("/api/auth/captcha");
+      setCaptcha(data.data);
+      setValue("captchaText", "");
+      clearErrors("captchaText");
+    } finally {
+      setCaptchaLoading(false);
+    }
+  }, [setValue, clearErrors]);
+
+  useEffect(() => {
+    refreshCaptcha();
+  }, [refreshCaptcha]);
 
   /* ---- Step 1 submit ---- */
   const onSubmit = async (vals) => {
     setServerError("");
     setLockMinutes(null);
+    setCaptchaError("");
 
     try {
-      const captchaToken = await executeCaptcha("login");
-
+      // Only probe Google recaptcha when a token was actually issued;
+      // the backend skips it in dev and we self-host the visual gate.
       const result = await login({
         email: vals.identifier,          // backend accepts email OR phone here
         password: vals.password,
         rememberMe: vals.rememberMe,
-        ...(captchaToken && { captchaToken }),
+        captcha: { token: captcha?.token, text: vals.captchaText.trim() },
       });
+
+      persistRemembered(vals); // Remember Me → fill fields on this device
 
       if (result.data?.twoFactorRequired) {
         // Hold the pending token; show the code step.
@@ -78,14 +145,22 @@ export default function Login() {
       navigate("/", { replace: true });
     } catch (err) {
       const status = err.response?.status;
-      const msg = err.response?.data?.message || "Could not log in. Please try again.";
+      const data = err.response?.data || {};
+      const msg = data.message || "Could not log in. Please try again.";
 
-      if (status === 423 || err.response?.data?.code === "ACCOUNT_LOCKED") {
+      // Wrong captcha code → swap the image, clear the input, stay put.
+      if (data.code === "CAPTCHA_FAILED") {
+        setCaptchaError("Captcha code is incorrect. Try again.");
+        refreshCaptcha();
+        return;
+      }
+
+      if (status === 423 || data.code === "ACCOUNT_LOCKED") {
         const mins = Number((msg.match(/(\d+)\s*minute/i) || [])[1] || 0);
         setLockMinutes(mins);
       } else if (
         status === 403 &&
-        err.response?.data?.code === "EMAIL_NOT_VERIFIED"
+        data.code === "EMAIL_NOT_VERIFIED"
       ) {
         toast.error("Please verify your email first.");
         navigate("/verify-otp", {
@@ -207,7 +282,7 @@ export default function Login() {
               <input
                 type="checkbox"
                 className="h-4 w-4 rounded border-white/20 bg-white/10 accent-brand-500"
-                {...register("rememberMe")}
+                {...register("rememberMe", { onChange: onRememberChange })}
               />
               Remember me for 30 days
             </label>
@@ -217,6 +292,70 @@ export default function Login() {
             >
               Forgot password?
             </Link>
+          </div>
+
+          {/* Human check — reCAPTCHA-style "not a robot" */}
+          <div>
+            <div className={`captcha-panel ${errors.notRobot ? "captcha-error" : ""}`}>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={notRobot}
+                  onClick={() => setValue("notRobot", !notRobot, { shouldValidate: true })}
+                  className={`robot-check ${notRobot ? "robot-check-on" : ""}`}
+                >
+                  {notRobot && (
+                    <svg viewBox="0 0 12 10" className="h-3.5 w-3.5" fill="none">
+                      <path d="M1 5.2 4.4 8.6 11 1.4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
+                <span className="text-xs font-semibold text-[#333]">I am not a robot</span>
+                <span className="ml-auto flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#a0a0a0]">
+                  reCAPTCHA
+                </span>
+              </div>
+              {errors.notRobot && <p className="mt-2 text-xs text-rose-600">⚠ {errors.notRobot.message}</p>}
+            </div>
+
+            {notRobot && (
+              <div className="mt-3 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="captcha-image"
+                    dangerouslySetInnerHTML={{ __html: captcha?.svg || "" }}
+                  />
+                  {captchaLoading && (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-brand-400" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={refreshCaptcha}
+                    aria-label="New captcha"
+                    title="New captcha"
+                    className="btn-secondary !p-2.5 text-base"
+                  >
+                    ⟳
+                  </button>
+                </div>
+
+                <div>
+                  <label htmlFor="captchaText" className="label-text">Enter the captcha code</label>
+                  <input
+                    id="captchaText"
+                    type="text"
+                    autoComplete="off"
+                    maxLength={8}
+                    placeholder="Type the 5 characters above"
+                    className={`input-field ${errors.captchaText || captchaError ? "input-error" : ""}`}
+                    {...register("captchaText")}
+                  />
+                  {errors.captchaText && <p className="error-text">⚠ {errors.captchaText.message}</p>}
+                  {!errors.captchaText && captchaError && <p className="error-text">⚠ {captchaError}</p>}
+                </div>
+              </div>
+            )}
           </div>
 
           <button type="submit" disabled={isSubmitting} className="btn-primary">

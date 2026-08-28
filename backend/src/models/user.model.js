@@ -51,9 +51,13 @@ const userSchema = new mongoose.Schema(
     /** ISO country code derived from the phone number, e.g. "IN", "US". */
     countryCode: { type: String, default: "" },
 
+    /**
+     * Hashing happens in the pre-save hook. NOT required at creation time:
+     * accounts are created without a password and it is collected only
+     * AFTER the email is verified (signup wizard → POST /set-password).
+     */
     password: {
       type: String,
-      required: [true, "Password is required"],
       minlength: [8, "Password must be at least 8 characters"],
       maxlength: [72, "Password must be at most 72 characters"], // bcrypt input limit
       select: false, // never fetched unless explicitly requested
@@ -132,8 +136,10 @@ userSchema.pre("save", async function () {
 /* Instance methods                                                    */
 /* ------------------------------------------------------------------ */
 
-/** Compare a plaintext candidate against the stored hash. */
+/** Compare a plaintext candidate against the stored hash.
+ * Accounts that never set a password yet simply never match. */
 userSchema.methods.comparePassword = function (candidate) {
+  if (!this.password) return Promise.resolve(false);
   return bcrypt.compare(candidate, this.password);
 };
 

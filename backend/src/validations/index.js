@@ -81,16 +81,20 @@ const otpField = z
 /* ------------------------------------------------------------------ */
 
 /**
- * Register body. Output is normalized:
- *   { name, email, password, captchaToken?, phone: "+9198...", countryCode: "IN" }
+ * Register body (STEP 1 of the signup wizard). Output is normalized:
+ *   { name, email, phone: "+9198...", countryCode: "IN", captchaToken? }
  * (confirmPassword / terms are frontend-only concerns and are stripped.)
+ *
+ * No password here — the account is created unverified, the email is
+ * verified via OTP, and the password is chosen afterwards on the same page
+ * (POST /set-password). This way no password exists until the email is
+ * proven real.
  */
 export const registerSchema = z
   .object({
     name: nameField,
     email: emailField,
     phone: phoneRawField,
-    password: passwordField,
     captchaToken: captchaField,
   })
   .transform((val) => {
@@ -101,6 +105,18 @@ export const registerSchema = z
       countryCode: parsed.country ?? "",
     };
   });
+
+/**
+ * POST /set-password — final step of signup. The signupToken (issued by
+ * /verify-otp once the email checks out) proves this device just verified
+ * the address; the password must satisfy the full complexity policy.
+ */
+export const setPasswordSchema = z.object({
+  signupToken: z
+    .string({ required_error: "Verification is required" })
+    .min(10, "Verification expired — please register again"),
+  password: passwordField,
+});
 
 /**
  * Login identifier: an email address OR a phone number in any format.
@@ -133,6 +149,17 @@ export const loginSchema = z.object({
   password: z.string({ required_error: "Password is required" }).min(1, "Password is required"),
   rememberMe: z.boolean().optional().default(false),
   captchaToken: captchaField,
+  /** Visual captcha: { token, text } issued by POST /api/auth/captcha. */
+  captcha: z
+    .object({
+      token: z.string({ required_error: "Captcha is required" }).min(10, "Captcha is invalid — refresh it"),
+      text: z
+        .string({ required_error: "Enter the captcha code" })
+        .trim()
+        .min(1, "Enter the captcha code")
+        .max(8, "Captcha code is too long"),
+    })
+    .optional(),
 });
 
 /** POST /verify-login-otp — completes a 2FA login after the password step. */
