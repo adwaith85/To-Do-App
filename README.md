@@ -18,8 +18,6 @@ Todo-App/
 │   │   ├── services/            token.service, otp.service
 │   │   ├── utils/               jwt, password, otp, mailer, captcha, history…
 │   │   └── validations/         all Zod schemas
-│   ├── scripts/smoke-test.mjs   57-check end-to-end suite
-│   └── postman/                 Postman collection for every endpoint
 └── Frontend/                    React 19 + Tailwind v4 (Vite)
     └── src/
         ├── api/client.js        axios + bearer + silent refresh + CSRF echo
@@ -36,7 +34,7 @@ Todo-App/
 # 1. Backend — port 5050 (8080 is commonly taken)
 cd backend
 npm install
-cp .env.example .env          # then fill in MONGO_URI + JWT secrets (+ SMTP)
+# .env already exists — edit MONGO_URI + JWT secrets (optional SMTP) there
 npm run dev                   # http://localhost:5050
 
 # 2. Frontend — another terminal
@@ -51,7 +49,7 @@ The frontend has **no env files** — the API URL is set in
 
 ### Environment variables (backend/.env)
 
-See `backend/.env.example` for the documented template. Highlights:
+The backend reads everything from `backend/.env`. Highlights:
 
 | Variable | Purpose |
 |---|---|
@@ -108,23 +106,12 @@ See `backend/.env.example` for the documented template. Highlights:
 - zxcvbn live password strength meter · react-hot-toast notifications
 - Loading spinners in buttons · resend-code cooldown · devOtp banner
 
-## Testing
+## Manual testing
 
-```bash
-cd backend
-# boot with test overrides (captcha off, SMTP off → devOtp, limits raised):
-RECAPTCHA_SECRET_KEY="" SMTP_HOST="" \
-REGISTER_RATE_LIMIT_MAX=50 AUTH_RATE_LIMIT_MAX=200 \
-PASSWORD_RESET_RATE_LIMIT_MAX=50 API_RATE_LIMIT_MAX=5000 \
-node server.js
-
-# second terminal:
-BASE=http://localhost:5050 node scripts/smoke-test.mjs
-# → RESULT: 57 passed, 0 failed
-```
-
-Import `backend/postman/SecureTodo.Auth.postman_collection.json` into Postman
-for manual exploration (auto-saves tokens/devOtp between calls).
+Test each flow through the UI at http://localhost:5173 — register an
+account, verify the emailed code (or use `devOtp` from the API response
+when `SMTP_HOST` is empty in dev), then log in, create todos, refresh and
+logout. No Postman or automated suite is required.
 
 ## API summary
 

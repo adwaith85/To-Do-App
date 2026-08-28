@@ -41,18 +41,32 @@ function loadRecaptchaScript() {
 
 /**
  * Run the invisible captcha for `action` ("login" | "register").
- * @returns {Promise<string|undefined>} token, or undefined when disabled.
+ * Never blocks the form: if Google's script or the token call fails
+ * (offline, ad-blocker, firewall) it resolves undefined, and the backend
+ * skips verification when captcha isn't enforced.
+ * @returns {Promise<string|undefined>} token, or undefined when unavailable.
  */
 export async function executeCaptcha(action) {
   if (!SITE_KEY) return undefined;
 
-  await loadRecaptchaScript();
-  return new Promise((resolve, reject) => {
-    window.grecaptcha.ready(() => {
-      window.grecaptcha
-        .execute(SITE_KEY, { action })
-        .then(resolve)
-        .catch(reject);
+  try {
+    await loadRecaptchaScript();
+  } catch (error) {
+    console.warn("[captcha] script unavailable — skipping:", error.message);
+    return undefined;
+  }
+
+  try {
+    return await new Promise((resolve, reject) => {
+      window.grecaptcha.ready(() => {
+        window.grecaptcha
+          .execute(SITE_KEY, { action })
+          .then(resolve)
+          .catch(reject);
+      });
     });
-  });
+  } catch (error) {
+    console.warn("[captcha] execute failed — skipping:", error.message);
+    return undefined;
+  }
 }

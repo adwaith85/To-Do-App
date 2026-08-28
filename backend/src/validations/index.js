@@ -66,8 +66,10 @@ const phoneRawField = z
     }
   });
 
-/** Optional reCAPTCHA token (enforced server-side only when keys are set). */
-const captchaField = z.string().trim().max(2048).optional();
+/** Optional reCAPTCHA token (enforced server-side only when keys are set).
+ * v3 tokens can exceed 2KB, and validity is checked against Google's
+ * siteverify endpoint anyway, so a generous cap is safe here. */
+const captchaField = z.string().trim().max(8192).optional();
 
 /** The classic 6-digit OTP code. */
 const otpField = z

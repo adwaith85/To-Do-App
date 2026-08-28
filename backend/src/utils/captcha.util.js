@@ -13,8 +13,12 @@ import { ApiError } from "./ApiError.js";
 
 const VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
 
-/** Is captcha enforcement active on this deployment? */
+/** Is captcha enforcement active on this deployment?
+ * reCAPTCHA v3 needs reliable outbound HTTPS to Google's siteverify API,
+ * which local dev machines often can't reach — so it is only enforced in
+ * production. */
 export function captchaEnabled() {
+  if (!env.isProd) return false;
   return Boolean(env.recaptcha.secretKey);
 }
 
@@ -30,13 +34,25 @@ export async function assertCaptcha(token, expectedAction) {
     throw ApiError.badRequest("Captcha verification failed. Please retry.");
   }
 
-  const params = new URLSearchParams({
-    secret: env.recaptcha.secretKey,
-    response: token,
-  });
+  let result;
+  try {
+    const params = new URLSearchParams({
+      secret: env.recaptcha.secretKey,
+      response: token,
+    });
 
-  const response = await fetch(VERIFY_URL, { method: "POST", body: params });
-  const result = await response.json().catch(() => ({}));
+    const response = await fetch(VERIFY_URL, {
+      method: "POST",
+      body: params,
+      signal: AbortSignal.timeout(5000),
+    });
+    result = await response.json().catch(() => ({}));
+  } catch (error) {
+    // Google unreachable (offline/proxy/firewall) — fail open so genuine
+    // users aren't blocked by a captcha outage. Log for visibility.
+    console.warn("[captcha] siteverify request failed — skipping check:", error.message);
+    return;
+  }
 
   const actionOk = !expectedAction || result.action === expectedAction;
   // Some responses omit "score" (v2-style); treat missing score as neutral.
