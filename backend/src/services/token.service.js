@@ -130,7 +130,7 @@ export async function rotateRefreshToken(rawToken, req, res) {
   }
 
   const user = await User.findById(payload.sub).select("+refreshTokens");
-  if (!user || !Array.isArray(user.refreshTokens)) {
+  if (!user || user.isDeleted || !Array.isArray(user.refreshTokens)) {
     clearRefreshCookie(res);
     throw ApiError.unauthorized("Session no longer exists. Please log in again.");
   }
@@ -167,6 +167,7 @@ export async function rotateRefreshToken(rawToken, req, res) {
         "refreshTokens.$.tokenHash": hashToken(refreshToken),
         "refreshTokens.$.ip": getClientIp(req),
         "refreshTokens.$.device": getDevice(req),
+        "refreshTokens.$.lastUsedAt": new Date(),
       },
     }
   );
@@ -260,8 +261,10 @@ export async function listSessions(userId, currentRawToken) {
     id: String(s._id),
     ip: s.ip,
     device: s.device,
+    location: s.location || "",
     rememberMe: s.rememberMe,
     createdAt: s.createdAt,
+    lastUsedAt: s.lastUsedAt,
     current: currentHash !== null && s.tokenHash === currentHash,
   }));
 }

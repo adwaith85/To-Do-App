@@ -29,6 +29,9 @@ export const requireAuth = asyncHandler(async (req, _res, next) => {
   if (!user) {
     throw ApiError.unauthorized("User no longer exists.");
   }
+  if (user.isDeleted) {
+    throw ApiError.unauthorized("This account is no longer active.", "ACCOUNT_DEACTIVATED");
+  }
 
   req.user = user;
   next();

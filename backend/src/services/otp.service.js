@@ -14,19 +14,21 @@ import { ApiError } from "../utils/ApiError.js";
 /**
  * Create (or replace) the active OTP for an email, then deliver it.
  *
- * @param {"email"|"password_reset"} type - which purpose this code serves.
- * @param {string} target                 - the email address.
+ * @param {"email"|"phone"|"password_reset"|"login_2fa"} type - purpose.
+ * @param {string} target                - the email address / phone number.
+ * @param {string|null} [userId]         - owning account, when known.
  * @returns {Promise<{delivered: boolean, devCode?: string}>}
  *   devCode is present ONLY when SMTP isn't configured outside production
  *   (lets devs complete flows without an inbox).
  */
-export async function issueOtp(type, target) {
+export async function issueOtp(type, target, userId = null) {
   const code = generateOtpCode();
 
   await Otp.findOneAndUpdate(
     { target, type },
     {
       $set: {
+        userId,
         codeHash: hashOtpCode(code),
         attempts: 0,      // fresh code → fresh attempt budget
         used: false,

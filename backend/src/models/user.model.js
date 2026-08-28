@@ -71,8 +71,21 @@ const userSchema = new mongoose.Schema(
       },
     },
 
+    /**
+     * Set by the pre-save hook every time the password changes. Stored so a
+     * future token policy can reject JWTs issued BEFORE a password change.
+     */
+    passwordChangedAt: { type: Date, default: null },
+
     /* ---- Verification state ---- */
     isEmailVerified: { type: Boolean, default: false },
+    isPhoneVerified: { type: Boolean, default: false },
+
+    /**
+     * True only after at least the email is verified. Flips to true in the
+     * verify-otp handler (legacy "verify later" accounts included).
+     */
+    isActive: { type: Boolean, default: false },
 
     /**
      * Optional second factor. When true, a successful password check does
@@ -80,6 +93,11 @@ const userSchema = new mongoose.Schema(
      * and a 6-digit code is emailed; POST /verify-login-otp completes it.
      */
     twoFactorEnabled: { type: Boolean, default: false },
+    twoFactorMethod: {
+      type: String,
+      enum: ["email", "sms"],
+      default: "email", // SMS delivery is a future option; email is wired.
+    },
 
     role: {
       type: String,
@@ -87,10 +105,19 @@ const userSchema = new mongoose.Schema(
       default: "user",
     },
 
+    /* ---- Profile (optional extras) ---- */
+    avatarUrl: { type: String, default: "" },
+    timezone: { type: String, default: "UTC" },
+
     /* ---- Brute-force protection (account lockout) ---- */
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date, default: null },
     lastLoginAt: { type: Date, default: null },
+    lastLoginIp: { type: String, default: "" },
+
+    /* ---- Soft delete / account deactivation ---- */
+    isDeleted: { type: Boolean, default: false },
+    deactivatedAt: { type: Date, default: null },
 
     /**
      * Active sessions — one entry per logged-in DEVICE.
@@ -106,8 +133,10 @@ const userSchema = new mongoose.Schema(
           tokenHash: { type: String, required: true },
           ip: { type: String, default: "unknown" },
           device: { type: String, default: "unknown" },
+          location: { type: String, default: "" }, // optional IP-geo lookup
           rememberMe: { type: Boolean, default: false },
           createdAt: { type: Date, default: Date.now },
+          lastUsedAt: { type: Date, default: Date.now }, // refreshed on each rotation
         },
       ],
       default: [],
@@ -130,6 +159,7 @@ const userSchema = new mongoose.Schema(
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
   this.password = await bcrypt.hash(this.password, 12);
+  this.passwordChangedAt = new Date();
 });
 
 /* ------------------------------------------------------------------ */
@@ -181,8 +211,8 @@ const MAX_DEVICES = 10;
  * Persist a new device session, evicting the oldest beyond MAX_DEVICES.
  * @param {{tokenHash:string, ip?:string, device?:string, rememberMe?:boolean}} session
  */
-userSchema.methods.addSession = function ({ tokenHash, ip = "unknown", device = "unknown", rememberMe = false }) {
-  this.refreshTokens.unshift({ tokenHash, ip, device, rememberMe });
+userSchema.methods.addSession = function ({ tokenHash, ip = "unknown", device = "unknown", location = "", rememberMe = false }) {
+  this.refreshTokens.unshift({ tokenHash, ip, device, location, rememberMe });
   if (this.refreshTokens.length > MAX_DEVICES) {
     this.refreshTokens.length = MAX_DEVICES;
   }

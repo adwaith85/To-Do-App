@@ -68,7 +68,7 @@ export const register = asyncHandler(async (req, res) => {
   // isEmailVerified stays false; password is set after verification.
   const user = await User.create({ name, email, phone, countryCode });
 
-  const { delivered, devCode } = await issueOtp("email", email);
+  const { delivered, devCode } = await issueOtp("email", email, user._id);
 
   await logAuthEvent({
     userId: user._id, action: "REGISTER_INITIATED", req,
@@ -122,8 +122,12 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   }
 
   user.isEmailVerified = true;
+  user.isActive = true; // verified = an active account
   const finishLogin = Boolean(user.password); // legacy accounts verify WITH a password
-  if (finishLogin) user.lastLoginAt = new Date();
+  if (finishLogin) {
+    user.lastLoginAt = new Date();
+    user.lastLoginIp = getClientIp(req);
+  }
   await user.save();
 
   await logAuthEvent({ userId: user._id, action: "EMAIL_VERIFY_SUCCESS", req });
@@ -201,7 +205,7 @@ export const resendOtp = asyncHandler(async (req, res) => {
 
   await assertResendCooldown(email, "email"); // throws 429 when too soon
 
-  const { delivered, devCode } = await issueOtp("email", email);
+  const { delivered, devCode } = await issueOtp("email", email, user._id);
   if (!delivered && !devCode) {
     throw new ApiError(502, "Could not send the verification email. Try again later.");
   }
@@ -252,6 +256,7 @@ async function maybeAlertNewDevice(user, req) {
 async function grantLoginSession(user, req, res, { rememberMe = false }) {
   await user.resetLoginFailures();
   user.lastLoginAt = new Date();
+  user.lastLoginIp = getClientIp(req);
   await user.save();
 
   const accessToken = await issueSession(user, req, res, { rememberMe });
@@ -310,8 +315,17 @@ export const login = asyncHandler(async (req, res) => {
   if (!user) {
     await verifyPassword(password, "$2a$12$C6UzMDM.H6dfI/f/IKcEeO1R9cD7nFt0QkCwLPUnZ0eKBHhP1JBTO");
     await logAuthEvent({
-      action: "LOGIN_FAILED", status: "failed",
+      action: "LOGIN_FAILED", status: "failed_password",
       req, meta: { reason: "unknown_identifier" },
+    });
+    throw ApiError.unauthorized("Incorrect credentials.");
+  }
+
+  /* ---- Soft-deleted account? Same generic error (no existence leak). ---- */
+  if (user.isDeleted) {
+    await logAuthEvent({
+      userId: user._id, action: "LOGIN_FAILED", status: "failed_locked",
+      req, meta: { reason: "account_deleted" },
     });
     throw ApiError.unauthorized("Incorrect credentials.");
   }
@@ -319,7 +333,7 @@ export const login = asyncHandler(async (req, res) => {
   /* ---- Locked account? ---- */
   if (user.isLocked()) {
     await logAuthEvent({
-      userId: user._id, action: "LOGIN_BLOCKED_LOCKED", status: "failed", req,
+      userId: user._id, action: "LOGIN_BLOCKED_LOCKED", status: "failed_locked", req,
     });
     throw new ApiError(
       423, // 423 Locked
@@ -334,7 +348,7 @@ export const login = asyncHandler(async (req, res) => {
   if (!matches) {
     await user.registerFailedLogin();
     await logAuthEvent({
-      userId: user._id, action: "LOGIN_FAILED", status: "failed",
+      userId: user._id, action: "LOGIN_FAILED", status: "failed_password",
       req, meta: { reason: "bad_password", attempts: user.failedLoginAttempts },
     });
 
@@ -360,7 +374,7 @@ export const login = asyncHandler(async (req, res) => {
   /* ---- Two-factor branch: hold the session until the code checks out ---- */
   if (user.twoFactorEnabled) {
     const pendingToken = signTwoFactorPendingToken(user);
-    const { delivered, devCode } = await issueOtp("login_2fa", user.email);
+    const { delivered, devCode } = await issueOtp("login_2fa", user.email, user._id);
 
     await logAuthEvent({
       userId: user._id, action: "LOGIN_2FA_PENDING", req,
@@ -403,7 +417,7 @@ export const verifyLoginOtp = asyncHandler(async (req, res) => {
     payload = verifyTwoFactorPendingToken(pendingToken);
   } catch (error) {
     await logAuthEvent({
-      action: "LOGIN_2FA_FAILED", status: "failed",
+      action: "LOGIN_2FA_FAILED", status: "failed_otp",
       req, meta: { reason: "pending_token_invalid" },
     });
     throw error;
@@ -413,6 +427,9 @@ export const verifyLoginOtp = asyncHandler(async (req, res) => {
   if (!user || !user.isEmailVerified) {
     throw ApiError.unauthorized("Login session expired. Please sign in again.", "TWO_FACTOR_EXPIRED");
   }
+  if (user.isDeleted) {
+    throw ApiError.unauthorized("This account is no longer active.", "ACCOUNT_DEACTIVATED");
+  }
   if (user.isLocked()) {
     throw new ApiError(423, "Account temporarily locked. Try again later.", [], "ACCOUNT_LOCKED");
   }
@@ -421,7 +438,7 @@ export const verifyLoginOtp = asyncHandler(async (req, res) => {
     await verifyOtpForTarget("login_2fa", user.email, otp);
   } catch (error) {
     await logAuthEvent({
-      userId: user._id, action: "LOGIN_2FA_FAILED", status: "failed",
+      userId: user._id, action: "LOGIN_2FA_FAILED", status: "failed_otp",
       req, meta: { reason: error.message },
     });
     throw error;
@@ -519,7 +536,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     return res.status(200).json({ success: true, message: genericMessage });
   }
 
-  const { delivered, devCode } = await issueOtp("password_reset", email);
+  const { delivered, devCode } = await issueOtp("password_reset", email, user._id);
 
   await logAuthEvent({
     userId: user._id, action: "PASSWORD_RESET_REQUESTED", req, meta: { delivered },

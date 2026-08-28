@@ -43,6 +43,29 @@ function timeAgo(iso) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/* Compact "Sep 21" style date helper for due dates. */
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/* Badge tones per priority. */
+const priorityTone = {
+  low: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+  medium: "border-amber-500/30 bg-amber-500/10 text-amber-400",
+  high: "border-rose-500/30 bg-rose-500/10 text-rose-400",
+};
+
+function Chip({ children }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
+      {children}
+    </span>
+  );
+}
+
 export default function Todos() {
   const { user, logout, toggleTwoFactor } = useAuth();
 
@@ -50,6 +73,14 @@ export default function Todos() {
   const [todos, setTodos] = useState(null); // null = still loading
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [details, setDetails] = useState({
+    description: "",
+    priority: "medium",
+    dueDate: "",
+    tags: "",
+  });
+  const [pinned, setPinned] = useState(false);
 
   /* ---- Sessions state ---- */
   const [sessions, setSessions] = useState(null);
@@ -82,11 +113,27 @@ export default function Todos() {
     const task = input.trim();
     if (!task) return;
 
+    const tags = details.tags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .slice(0, 10);
+
     setBusy(true);
     try {
-      const { data } = await client.post("/api/todos", { task });
+      const { data } = await client.post("/api/todos", {
+        task,
+        description: details.description.trim(),
+        priority: details.priority,
+        dueDate: details.dueDate || undefined,
+        tags,
+        isPinned: pinned,
+      });
       setTodos((prev) => [data.data, ...(prev || [])]);
       setInput("");
+      setPinned(false);
+      setDetails({ description: "", priority: "medium", dueDate: "", tags: "" });
+      setShowDetails(false);
       toast.success("Task added");
     } catch {
       toast.error("Could not add the task");
@@ -201,22 +248,105 @@ export default function Todos() {
           </div>
 
           {/* Add form */}
-          <form onSubmit={addTodo} className="mb-7 flex gap-3">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="What needs doing?"
-              maxLength={200}
-              className="input-field"
-            />
+          <form onSubmit={addTodo} className="mb-7">
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="What needs doing?"
+                maxLength={200}
+                className="input-field"
+              />
+              <button
+                type="submit"
+                disabled={busy || !input.trim()}
+                className="btn-primary w-auto shrink-0 px-6"
+              >
+                Add
+              </button>
+            </div>
+
             <button
-              type="submit"
-              disabled={busy || !input.trim()}
-              className="btn-primary w-auto shrink-0 px-6"
+              type="button"
+              onClick={() => setShowDetails((s) => !s)}
+              className="mt-2.5 text-xs font-semibold text-slate-400 transition hover:text-brand-300"
             >
-              Add
+              {showDetails ? "− Hide details" : "+ Add details"}
             </button>
+
+            {showDetails && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label htmlFor="todo-desc" className="label-text">Description</label>
+                  <textarea
+                    id="todo-desc"
+                    rows={2}
+                    value={details.description}
+                    maxLength={2000}
+                    onChange={(e) =>
+                      setDetails((d) => ({ ...d, description: e.target.value }))
+                    }
+                    placeholder="Optional notes…"
+                    className="input-field resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="todo-priority" className="label-text">Priority</label>
+                  <select
+                    id="todo-priority"
+                    value={details.priority}
+                    onChange={(e) =>
+                      setDetails((d) => ({ ...d, priority: e.target.value }))
+                    }
+                    className="input-field cursor-pointer"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="todo-due" className="label-text">Due date</label>
+                  <input
+                    id="todo-due"
+                    type="date"
+                    value={details.dueDate}
+                    onChange={(e) =>
+                      setDetails((d) => ({ ...d, dueDate: e.target.value }))
+                    }
+                    className="input-field"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="todo-tags" className="label-text">Tags (comma separated)</label>
+                  <input
+                    id="todo-tags"
+                    type="text"
+                    value={details.tags}
+                    maxLength={300}
+                    onChange={(e) =>
+                      setDetails((d) => ({ ...d, tags: e.target.value }))
+                    }
+                    placeholder="work, urgent, home…"
+                    className="input-field"
+                  />
+                </div>
+
+                <label className="flex cursor-pointer items-center gap-2.5 pt-6 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={pinned}
+                    onChange={(e) => setPinned(e.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-white/10 accent-brand-500"
+                  />
+                  📌 Pin to top
+                </label>
+              </div>
+            )}
           </form>
 
           {/* List */}
@@ -252,16 +382,39 @@ export default function Todos() {
                   </label>
 
                   {/* Task label with animated strike-through */}
-                  <span
-                    className={`relative min-w-0 flex-1 break-words ${
-                      todo.status === "completed" ? "text-slate-500" : "text-slate-100"
-                    }`}
-                  >
-                    {todo.task}
-                    {todo.status === "completed" && (
-                      <span className="absolute left-0 top-1/2 h-px w-full bg-slate-500" />
+                  <div className="min-w-0 flex-1">
+                    <span
+                      className={`relative block break-words ${
+                        todo.status === "completed" ? "text-slate-500" : "text-slate-100"
+                      }`}
+                    >
+                      {todo.task}
+                      {todo.status === "completed" && (
+                        <span className="absolute left-0 top-1/2 h-px w-full bg-slate-500" />
+                      )}
+                    </span>
+
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      {todo.isPinned && <Chip>📌 Pinned</Chip>}
+                      {todo.priority && todo.priority !== "medium" && (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${priorityTone[todo.priority] || ""}`}
+                        >
+                          {todo.priority}
+                        </span>
+                      )}
+                      {todo.dueDate && <Chip>🗓 {fmtDate(todo.dueDate)}</Chip>}
+                      {(todo.tags || []).map((t) => (
+                        <Chip key={t}>#{t}</Chip>
+                      ))}
+                    </div>
+
+                    {todo.description && (
+                      <p className="mt-1 line-clamp-2 max-w-md text-xs leading-relaxed text-slate-400">
+                        {todo.description}
+                      </p>
                     )}
-                  </span>
+                  </div>
 
                   {/* Delete */}
                   <button

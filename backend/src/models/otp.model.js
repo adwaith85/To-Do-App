@@ -3,6 +3,8 @@
  *
  * One active code per (target, type). Issuing a new code overwrites the
  * previous one (upsert), so old codes stop working instantly.
+ * `target` is the delivery identifier from the spec: the email address or
+ * E.164 phone number the code was sent to.
  *
  * Brute-force protection lives on the document:
  *  - attempts counts failed verifications and is capped by config
@@ -11,7 +13,16 @@
 import mongoose from "mongoose";
 import { env } from "../config/env.js";
 
-export const OTP_TYPES = ["email", "phone", "password_reset", "login_2fa"];
+// "email"/"phone" are the legacy labels used by otp.service; the canonical
+// spec names "email_verify"/"phone_verify" are accepted as well.
+export const OTP_TYPES = [
+  "email",
+  "phone",
+  "email_verify",
+  "phone_verify",
+  "password_reset",
+  "login_2fa",
+];
 
 const otpSchema = new mongoose.Schema(
   {
@@ -26,6 +37,13 @@ const otpSchema = new mongoose.Schema(
       type: String,
       enum: OTP_TYPES,
       required: true,
+    },
+    /** Account the code belongs to (null until the issuer resolves a user). */
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
     },
     codeHash: {
       type: String,

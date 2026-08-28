@@ -39,16 +39,29 @@ const loginHistorySchema = new mongoose.Schema(
       default: null, // null when no user could be resolved (e.g. unknown email)
       index: true,
     },
+    /** What the visitor typed — email or phone — as submitted. */
+    emailOrPhone: { type: String, default: "" },
     action: {
       type: String,
       enum: AUDIT_ACTIONS,
       required: true,
     },
+    /**
+     * Spec-backing detailed outcome. "failed_*" subtypes are used for
+     * login attempts; plain "failed"/"success" covers every other event.
+     */
     status: {
       type: String,
-      enum: ["success", "failed"],
+      enum: [
+        "success",
+        "failed",
+        "failed_password",
+        "failed_locked",
+        "failed_otp",
+      ],
       default: "success",
     },
+    reason: { type: String, default: "" }, // human-readable failure context
     ip: { type: String, default: "unknown" },
     device: { type: String, default: "unknown" }, // user-agent string
     location: { type: String, default: "" },       // optional IP-geo lookup
@@ -58,6 +71,8 @@ const loginHistorySchema = new mongoose.Schema(
   { timestamps: true } // createdAt doubles as the event timestamp
 );
 
+// Fast per-user audit queries (why a user was locked, recent sign-ins).
+loginHistorySchema.index({ user: 1, createdAt: -1 });
 // 90-day retention via TTL index.
 loginHistorySchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 

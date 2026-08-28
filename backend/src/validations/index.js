@@ -212,6 +212,19 @@ export const createTodoSchema = z.object({
     .trim()
     .min(1, "Task cannot be empty")
     .max(200, "Task must be at most 200 characters"),
+  description: z.string().trim().max(2000, "Description is too long").optional().default(""),
+  priority: z.enum(["low", "medium", "high"]).optional().default("medium"),
+  // Accept an ISO date-time or a bare "YYYY-MM-DD" and normalize to a Date.
+  dueDate: z
+    .union([z.date(), z.string()])
+    .optional()
+    .transform((v) => (v ? new Date(v) : null)),
+  tags: z
+    .array(z.string().trim().min(1, "Tag cannot be empty").max(30, "Tag is too long"))
+    .max(10, "At most 10 tags")
+    .optional()
+    .default([]),
+  isPinned: z.boolean().optional().default(false),
 });
 
 /** MongoDB ObjectId guard for :id params. */
