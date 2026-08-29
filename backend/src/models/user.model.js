@@ -105,6 +105,20 @@ const userSchema = new mongoose.Schema(
       default: "user",
     },
 
+    /**
+     * Admin login code — stored ONLY as a hash (SHA-256), never plaintext.
+     * `select:false` keeps it out of query results unless explicitly
+     * requested (+adminCode). Admins are promoted manually in MongoDB (or
+     * via scripts/generateAdminCode.js); on the shared login page they type
+     * "ADM-XXXXXXXX" into the verification field instead of the captcha.
+     */
+    adminCode: {
+      type: String,
+      select: false,
+    },
+    /** When the admin code was last set (for auditing). */
+    adminCodeSetAt: { type: Date, default: null },
+
     /* ---- Profile (optional extras) ---- */
     avatarUrl: { type: String, default: "" },
     timezone: { type: String, default: "UTC" },
@@ -171,6 +185,15 @@ userSchema.pre("save", async function () {
 userSchema.methods.comparePassword = function (candidate) {
   if (!this.password) return Promise.resolve(false);
   return bcrypt.compare(candidate, this.password);
+};
+
+/**
+ * Constant-time check of a submitted Admin Code against the stored hash.
+ * Returns false when the user has no admin code set (admins must be
+ * promoted + given a code before this can ever match).
+ */
+userSchema.methods.compareAdminCode = function (candidate) {
+  return bcrypt.compare(String(candidate || ""), this.adminCode || "");
 };
 
 /** Is the account currently locked out? */

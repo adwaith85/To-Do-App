@@ -253,20 +253,20 @@ async function maybeAlertNewDevice(user, req) {
 }
 
 /** Shared tail of every successful credential grant (with or without 2FA). */
-async function grantLoginSession(user, req, res, { rememberMe = false }) {
+async function grantLoginSession(user, req, res, { rememberMe = false, role } = {}) {
   await user.resetLoginFailures();
   user.lastLoginAt = new Date();
   user.lastLoginIp = getClientIp(req);
   await user.save();
 
-  const accessToken = await issueSession(user, req, res, { rememberMe });
+  const accessToken = await issueSession(user, req, res, { rememberMe, role });
 
   const { suspicious, alerted } = await maybeAlertNewDevice(user, req);
   await logAuthEvent({
     userId: user._id,
     action: "LOGIN_SUCCESS",
     req,
-    meta: { rememberMe, suspicious, alertEmailed: alerted },
+    meta: { rememberMe, suspicious, alertEmailed: alerted, role: role || user.role },
   });
 
   return accessToken;
@@ -293,23 +293,14 @@ async function grantLoginSession(user, req, res, { rememberMe = false }) {
 export const login = asyncHandler(async (req, res) => {
   // Zod normalized the identifier into {email} OR {phone}.
   const identifier = req.body.email;
-  const { password, rememberMe, captchaToken, captcha } = req.body;
+  const { password, rememberMe, captchaToken, verificationField, visualCaptchaToken } = req.body;
 
   await assertCaptcha(captchaToken, "login");
 
-  // Visual captcha gate runs BEFORE any credential work.
-  if (!captcha || !verifyCaptcha(captcha.token, captcha.text)) {
-    throw ApiError.badRequest(
-      "Captcha code is incorrect. Please try again.",
-      [],
-      "CAPTCHA_FAILED"
-    );
-  }
-
   const query = identifier.email ? { email: identifier.email } : { phone: identifier.phone };
 
-  // +password: field has select:false by default for safety elsewhere.
-  const user = await User.findOne(query).select("+password");
+  // +password & +adminCode: both fields are select:false by default.
+  const user = await User.findOne(query).select("+password +adminCode");
 
   /* ---- Unknown identity: burn comparable CPU time to defeat timing attacks ---- */
   if (!user) {
@@ -371,32 +362,61 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Please verify your email first.", [], "EMAIL_NOT_VERIFIED");
   }
 
+  /* ---- Unified verification field: Admin Code OR visual captcha ----
+   * One input serves two purposes, disambiguated by FORMAT:
+   *   - an admin whose DB role is "admin" and who has an adminCode set and
+   *     whose typed value HASH-MATCHES that code  → ADMIN login.
+   *   - otherwise (or when the above doesn't match) → treat the value as
+   *     a normal visual-captcha response → USER login.
+   * Admin-code match is attempted FIRST so there is no ambiguity. The
+   * password ALWAYS must match (verified above) regardless of path. */
+  let effectiveRole = "user";
+  const codeMatch =
+    user.role === "admin" &&
+    Boolean(user.adminCode) &&
+    (await user.compareAdminCode(verificationField));
+
+  if (codeMatch) {
+    // Admin decrypted: this session gets the admin token.
+    effectiveRole = "admin";
+  } else {
+    // Fall back to normal captcha validation for a USER login.
+    if (!verifyCaptcha(visualCaptchaToken, verificationField)) {
+      throw ApiError.badRequest(
+        "Captcha code is incorrect. Please try again.",
+        [],
+        "CAPTCHA_FAILED"
+      );
+    }
+    effectiveRole = "user"; // even DB admins who use a captcha log in as user
+  }
+
   /* ---- Two-factor branch: hold the session until the code checks out ---- */
   if (user.twoFactorEnabled) {
-    const pendingToken = signTwoFactorPendingToken(user);
+    const pendingToken = signTwoFactorPendingToken(user, effectiveRole);
     const { delivered, devCode } = await issueOtp("login_2fa", user.email, user._id);
 
     await logAuthEvent({
       userId: user._id, action: "LOGIN_2FA_PENDING", req,
-      meta: { rememberMe, otpDelivered: delivered },
+      meta: { rememberMe, otpDelivered: delivered, role: effectiveRole },
     });
 
     const maskedEmail = user.email.replace(/^(.).*(@.*)$/, "$1*****$2");
     return res.status(200).json({
       success: true,
       message: `We emailed a sign-in code to ${maskedEmail}. It expires in ${env.otp.expiryMinutes} minutes.`,
-      data: { twoFactorRequired: true, pendingToken },
+      data: { twoFactorRequired: true, pendingToken, role: effectiveRole },
       ...(devCode && { devOtp: devCode }), // dev-only fallback (SMTP off)
     });
   }
 
   /* ---- Success path ---- */
-  const accessToken = await grantLoginSession(user, req, res, { rememberMe });
+  const accessToken = await grantLoginSession(user, req, res, { rememberMe, role: effectiveRole });
 
   res.status(200).json({
     success: true,
     message: "Logged in successfully.",
-    data: { user, accessToken },
+    data: { user, accessToken, role: effectiveRole },
   });
 });
 
@@ -444,14 +464,17 @@ export const verifyLoginOtp = asyncHandler(async (req, res) => {
     throw error;
   }
 
-  const accessToken = await grantLoginSession(user, req, res, { rememberMe });
+  const accessToken = await grantLoginSession(user, req, res, {
+    rememberMe,
+    role: payload.role || user.role, // role earned at the password+verification step
+  });
 
   await logAuthEvent({ userId: user._id, action: "LOGIN_2FA_SUCCESS", req });
 
   res.status(200).json({
     success: true,
     message: "Logged in successfully.",
-    data: { user, accessToken },
+    data: { user, accessToken, role: payload.role || user.role },
   });
 });
 
@@ -596,7 +619,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
  * the blacklist; replayed tokens trigger a full revoke.
  */
 export const refreshAccessToken = asyncHandler(async (req, res) => {
-  const { accessToken, user } = await rotateRefreshToken(
+  const { accessToken, user, role } = await rotateRefreshToken(
     req.cookies?.refreshToken || "",
     req,
     res
@@ -607,7 +630,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: "Token refreshed.",
-    data: { user, accessToken },
+    data: { user, accessToken, role },
   });
 });
 

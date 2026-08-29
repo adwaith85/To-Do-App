@@ -11,10 +11,33 @@
  */
 import rateLimit from "express-rate-limit";
 import { env } from "../config/env.js";
+import RateLimitLog from "../models/rateLimitLog.model.js";
+import { getClientIp, getDevice } from "../utils/history.util.js";
+
+/**
+ * Fire-and-forget record of this 429 so admins can spot abuse patterns.
+ * Never throws — a logging failure must not block the response.
+ */
+async function recordRateLimitHit(req, limiter) {
+  try {
+    await RateLimitLog.create({
+      ip: getClientIp(req),
+      userId: req.user?._id || null,
+      method: req.method,
+      path: req.originalUrl || req.path || "",
+      limiter,
+      userAgent: getDevice(req),
+    });
+  } catch (error) {
+    console.error("[rate-limit] Failed to log rate-limit hit:", error.message);
+  }
+}
 
 /** Shared response shape so the frontend can render one error style. */
-function limiterHandler(message) {
-  return (_req, res) => {
+function limiterHandler(limiter, message) {
+  return async (req, res) => {
+    // recordRateLimitHit may be mid-write; don't block the 429.
+    void recordRateLimitHit(req, limiter);
     res.status(429).json({ success: false, message });
   };
 }
@@ -29,7 +52,7 @@ export const registerLimiter = rateLimit({
   windowMs: parseInt(env.rateLimits.registerWindowMinutes, 10) * 60_000,
   limit: parseInt(env.rateLimits.registerMax, 10),
   ...standardOptions,
-  handler: limiterHandler("Too many registration attempts from this IP. Please try again later."),
+  handler: limiterHandler("register", "Too many registration attempts from this IP. Please try again later."),
 });
 
 /** Login / OTP endpoints: default 20 attempts / 15 min / IP. */
@@ -38,6 +61,7 @@ export const authLimiter = rateLimit({
   limit: parseInt(env.rateLimits.authMax, 10),
   ...standardOptions,
   handler: limiterHandler(
+    "auth",
     `Too many authentication attempts. Please try again in ${env.rateLimits.authWindowMinutes} minutes.`
   ),
 });
@@ -51,7 +75,7 @@ export const passwordResetLimiter = rateLimit({
   windowMs: parseInt(env.rateLimits.passwordResetWindowMinutes, 10) * 60_000,
   limit: parseInt(env.rateLimits.passwordResetMax, 10),
   ...standardOptions,
-  handler: limiterHandler("Too many password reset attempts. Please try again later."),
+  handler: limiterHandler("password_reset", "Too many password reset attempts. Please try again later."),
 });
 
 /** Whole-API limiter: default 300 requests / 15 min / IP. */
@@ -59,5 +83,5 @@ export const apiLimiter = rateLimit({
   windowMs: parseInt(env.rateLimits.apiWindowMinutes, 10) * 60_000,
   limit: parseInt(env.rateLimits.apiMax, 10),
   ...standardOptions,
-  handler: limiterHandler("Too many requests from this IP. Please try again later."),
+  handler: limiterHandler("api", "Too many requests from this IP. Please try again later."),
 });

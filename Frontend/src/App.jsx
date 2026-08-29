@@ -10,12 +10,19 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
+import AdminRoute from "./components/AdminRoute";
+import AdminLayout from "./components/AdminLayout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import VerifyOtp from "./pages/VerifyOtp";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Todos from "./pages/Todos";
+import AdminDashboard from "./pages/admin/Dashboard";
+import AdminUsers from "./pages/admin/Users";
+import AdminSecurity from "./pages/admin/Security";
+import AdminTodos from "./pages/admin/Todos";
+import AdminAudit from "./pages/admin/Audit";
 
 export default function App() {
   return (
@@ -56,6 +63,15 @@ export default function App() {
 
         {/* Authenticated app */}
         <Route path="/" element={<ProtectedRoute><Todos /></ProtectedRoute>} />
+
+        {/* Admin panel — session role must be "admin" */}
+        <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
+          <Route index element={<AdminDashboard />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="security" element={<AdminSecurity />} />
+          <Route path="todos" element={<AdminTodos />} />
+          <Route path="audit" element={<AdminAudit />} />
+        </Route>
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

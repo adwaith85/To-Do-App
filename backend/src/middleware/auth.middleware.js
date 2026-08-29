@@ -34,19 +34,25 @@ export const requireAuth = asyncHandler(async (req, _res, next) => {
   }
 
   req.user = user;
+  // Role comes from the TOKEN, not the DB: the unified login can mint a
+  // "user" session for a DB admin who signed in via captcha. Authorization
+  // must never grant admin powers based on the stored role alone.
+  req.sessionRole = payload.role || user.role || "user";
   next();
 });
 
 /**
  * authorize("admin", ...) — role gate to chain AFTER requireAuth.
+ * Checks the SESSION role (token claim), never the raw DB role.
  * Usage: router.get("/admin/x", requireAuth, authorize("admin"), handler)
  */
 export function authorize(...allowedRoles) {
   return (req, _res, next) => {
-    if (!req.user) {
+    if (!req.sessionRole && !req.user) {
       return next(ApiError.unauthorized("Authentication required."));
     }
-    if (!allowedRoles.includes(req.user.role)) {
+    const role = req.sessionRole || req.user.role;
+    if (!allowedRoles.includes(role)) {
       return next(ApiError.forbidden("You do not have permission to do that.", "FORBIDDEN_ROLE"));
     }
     next();

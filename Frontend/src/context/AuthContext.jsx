@@ -17,11 +17,15 @@ import { clearRemembered } from "../utils/rememberMe";
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true); // true until first refresh check
+  // The SESSION role (from the access token / refresh), independent of the
+  // DB `user.role`: an admin who signed in via captcha gets "user" here.
+  const [role, setRole] = useState(null);
 
-  /** Apply a session payload ({ user, accessToken }) from any endpoint. */
+  /** Apply a session payload ({ user, accessToken, role? }) from any endpoint. */
   const applySession = useCallback((data) => {
     setAccessToken(data.accessToken || null);
     setUser(data.user || null);
+    if (data.role) setRole(data.role);
   }, []);
 
   /* ---- Restore session on first load ---- */
@@ -43,6 +47,7 @@ export function AuthProvider({ children }) {
     const onExpired = () => {
       setAccessToken(null);
       setUser(null);
+      setRole(null);
     };
     window.addEventListener("auth:session-expired", onExpired);
     return () => window.removeEventListener("auth:session-expired", onExpired);
@@ -122,13 +127,14 @@ export function AuthProvider({ children }) {
       clearRemembered();
       setAccessToken(null);
       setUser(null);
+      setRole(null);
     }
   };
 
   return (
     <AuthContext.Provider
       value={{
-        user, booting,
+        user, booting, role,
         login, verifyLoginOtp,
         register, setPassword, verifyOtp, resendOtp,
         forgotPassword, resetPassword,

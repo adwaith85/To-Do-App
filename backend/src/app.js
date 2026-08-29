@@ -12,6 +12,7 @@ import cookieParser from "cookie-parser";
 import { env } from "./config/env.js";
 import authRoutes from "./routes/auth.routes.js";
 import todoRoutes from "./routes/todo.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
 import { apiLimiter } from "./middleware/rateLimiter.middleware.js";
 import { ensureCsrfCookie } from "./middleware/csrf.middleware.js";
 import { notFoundHandler, errorHandler } from "./middleware/error.middleware.js";
@@ -76,6 +77,7 @@ export function createApp() {
 
   api.use("/auth", authRoutes);
   api.use("/todos", todoRoutes);
+  api.use("/admin", adminRoutes);
 
   app.use("/api", api);
 

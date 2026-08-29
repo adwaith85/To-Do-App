@@ -11,26 +11,38 @@ import crypto from "crypto";
 import { env } from "../config/env.js";
 import { ApiError } from "./ApiError.js";
 
-/** Create a short-lived access token for a user document. */
-export function signAccessToken(user) {
-  return jwt.sign({ sub: String(user._id) }, env.jwt.accessSecret, {
-    expiresIn: env.jwt.accessExpiresIn,
-  });
+/** Create a short-lived access token for a user document.
+ * Carries the user's role so the client can branch on it (user vs admin)
+ * and middlewares can gate /api/admin/* without an extra DB hit.
+ * @param {object} user
+ * @param {string} [role] - effective role for THIS session; defaults to
+ *                          the user's stored role. The unified login relies
+ *                          on this to mint "user" tokens even for DB admins
+ *                          who chose to sign in via captcha.
+ */
+export function signAccessToken(user, role = user?.role || "user") {
+  return jwt.sign(
+    { sub: String(user._id), role },
+    env.jwt.accessSecret,
+    { expiresIn: env.jwt.accessExpiresIn }
+  );
 }
 
 /**
  * Create a long-lived refresh token.
  *
  * @param {object} user
- * @param {{rememberMe?: boolean}} [options]
+ * @param {{rememberMe?: boolean, role?: string}} [options]
  *   rememberMe=true stretches the lifetime to the 30-day policy; the
  *   default session lives 7 days.
  * `jti` (unique id per token) makes every refresh token distinct even when
  * issued within the same second — required for rotation tracking.
+ * The EFFECTIVE role is embedded so a silent refresh keeps the same
+ * privilege level the user earned when they signed in.
  */
-export function signRefreshToken(user, { rememberMe = false } = {}) {
+export function signRefreshToken(user, { rememberMe = false, role } = {}) {
   return jwt.sign(
-    { sub: String(user._id), jti: crypto.randomUUID(), rem: rememberMe },
+    { sub: String(user._id), jti: crypto.randomUUID(), rem: rememberMe, role: role || user.role || "user" },
     env.jwt.refreshSecret,
     { expiresIn: rememberMe ? env.jwt.refreshRememberExpiresIn : env.jwt.refreshExpiresIn }
   );
@@ -40,10 +52,12 @@ export function signRefreshToken(user, { rememberMe = false } = {}) {
  * Short-lived "2FA pending" proof. Issued after the PASSWORD step of a
  * login when twoFactorEnabled is on; carries no session power — it only
  * lets /verify-login-otp identify WHO is trying to finish signing in.
+ * The effective role is embedded so a 2FA-finishing admin still gets the
+ * role they earned at the password+verification step.
  */
-export function signTwoFactorPendingToken(user) {
+export function signTwoFactorPendingToken(user, role = user?.role || "user") {
   return jwt.sign(
-    { sub: String(user._id), purpose: "2fa" },
+    { sub: String(user._id), purpose: "2fa", role },
     env.jwt.accessSecret,
     { expiresIn: env.jwt.twoFactorExpiresIn }
   );

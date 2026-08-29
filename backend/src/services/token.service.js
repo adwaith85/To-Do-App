@@ -82,12 +82,12 @@ export function getRefreshTokenFromRequest(req) {
  * @param {object} user
  * @param {import("express").Request} req  - for the session's IP/device stamp
  * @param {import("express").Response} res
- * @param {{rememberMe?: boolean}} [options]
+ * @param {{rememberMe?: boolean, role?: string}} [options]
  * @returns {Promise<string>} the fresh access token
  */
-export async function issueSession(user, req, res, { rememberMe = false } = {}) {
-  const accessToken = signAccessToken(user);
-  const refreshToken = signRefreshToken(user, { rememberMe });
+export async function issueSession(user, req, res, { rememberMe = false, role } = {}) {
+  const accessToken = signAccessToken(user, role);
+  const refreshToken = signRefreshToken(user, { rememberMe, role });
 
   await user.addSession({
     tokenHash: hashToken(refreshToken),
@@ -158,8 +158,9 @@ export async function rotateRefreshToken(rawToken, req, res) {
    * and refreshes the IP/device stamp so the sessions screen stays true. */
   const currentSession = user.refreshTokens.find((s) => s.tokenHash === oldHash);
   const rememberMe = Boolean(currentSession?.rememberMe);
+  const role = payload.role || user.role || "user";
 
-  const refreshToken = signRefreshToken(user, { rememberMe });
+  const refreshToken = signRefreshToken(user, { rememberMe, role });
   const result = await User.updateOne(
     { _id: user._id, "refreshTokens.tokenHash": oldHash },
     {
@@ -179,9 +180,9 @@ export async function rotateRefreshToken(rawToken, req, res) {
   }
 
   setRefreshCookie(res, refreshToken, { rememberMe });
-  const accessToken = signAccessToken(user);
+  const accessToken = signAccessToken(user, role);
 
-  return { accessToken, user };
+  return { accessToken, user, role };
 }
 
 /* ------------------------------------------------------------------ */

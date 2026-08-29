@@ -149,17 +149,25 @@ export const loginSchema = z.object({
   password: z.string({ required_error: "Password is required" }).min(1, "Password is required"),
   rememberMe: z.boolean().optional().default(false),
   captchaToken: captchaField,
-  /** Visual captcha: { token, text } issued by POST /api/auth/captcha. */
-  captcha: z
-    .object({
-      token: z.string({ required_error: "Captcha is required" }).min(10, "Captcha is invalid — refresh it"),
-      text: z
-        .string({ required_error: "Enter the captcha code" })
-        .trim()
-        .min(1, "Enter the captcha code")
-        .max(8, "Captcha code is too long"),
-    })
-    .optional(),
+  /**
+   * UNIFIED verification field (see spec §3): one input that serves two
+   * purposes, disambiguated by FORMAT:
+   *   - admin code : "ADM-XXXX-XXXX" → admin login (hash-matched first)
+   *   - captcha    : the 5-char visual code → normal user login
+   * The backend tries the admin code FIRST, then falls back to the visual
+   * captcha, so there is never any ambiguity.
+   */
+  verificationField: z
+    .string({ required_error: "Captcha code is required" })
+    .trim()
+    .min(1, "Enter the captcha code to continue")
+    .max(32, "That code is too long"),
+  /**
+   * Token of the self-hosted VISUAL captcha (GET /api/auth/captcha). Sent
+   * whenever the user meant to log in as a normal user (captcha mode);
+   * ignored when verificationField resolves to that user's admin code.
+   */
+  visualCaptchaToken: z.string().trim().min(10, "Captcha is invalid — refresh it").optional(),
 });
 
 /** POST /verify-login-otp — completes a 2FA login after the password step. */
@@ -230,4 +238,103 @@ export const createTodoSchema = z.object({
 /** MongoDB ObjectId guard for :id params. */
 export const mongoIdParamSchema = z.object({
   id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid id format"),
+});
+
+/* ------------------------------------------------------------------ */
+/* Admin panel query filters                                          */
+/* ------------------------------------------------------------------ */
+
+/** Shared pagination + date-range fields used by admin list endpoints. */
+const paginationFields = {
+  page: z.coerce.number().int().positive().optional().default(1),
+  limit: z.coerce.number().int().positive().max(200).optional().default(25),
+  from: z
+    .string()
+    .optional()
+    .transform((v) => (v ? new Date(v) : undefined))
+    .refine((d) => !d || !Number.isNaN(d.getTime()), "Invalid 'from' date"),
+  to: z
+    .string()
+    .optional()
+    .transform((v) => (v ? new Date(v) : undefined))
+    .refine((d) => !d || !Number.isNaN(d.getTime()), "Invalid 'to' date"),
+};
+
+/** GET /api/admin/users */
+export const adminUsersQuery = z.object({
+  ...paginationFields,
+  search: z.string().trim().max(120).optional(),
+  role: z.enum(["user", "admin"]).optional(),
+  status: z.enum(["active", "locked", "deactivated", "unverified"]).optional(),
+});
+
+/** GET /api/admin/users/:id — none (path param only). */
+
+/** GET /api/admin/login-history */
+export const adminLoginHistoryQuery = z.object({
+  ...paginationFields,
+  status: z
+    .enum(["success", "failed", "failed_password", "failed_locked", "failed_otp"])
+    .optional(),
+  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid userId").optional(),
+});
+
+/** GET /api/admin/login-history/failed */
+export const adminLoginFailuresQuery = z.object({
+  from: paginationFields.from,
+  to: paginationFields.to,
+});
+
+/** GET /api/admin/sessions/active */
+export const adminSessionsQuery = z.object({
+  page: paginationFields.page,
+  limit: paginationFields.limit,
+});
+
+/** GET /api/admin/todos */
+export const adminTodosQuery = z.object({
+  ...paginationFields,
+  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid userId").optional(),
+  status: z.enum(["pending", "in_progress", "completed"]).optional(),
+  priority: z.enum(["low", "medium", "high"]).optional(),
+  search: z.string().trim().max(200).optional(),
+  includeDeleted: z.enum(["true", "false"]).optional(),
+});
+
+/** GET /api/admin/todos/stats */
+export const adminTodoStatsQuery = z.object({
+  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid userId").optional(),
+});
+
+/** GET /api/admin/todos/deleted */
+export const adminDeletedTodosQuery = z.object({
+  page: paginationFields.page,
+  limit: paginationFields.limit,
+});
+
+/** GET /api/admin/stats/signups */
+export const adminSignupsQuery = z.object({
+  from: paginationFields.from,
+  to: paginationFields.to,
+  granularity: z.enum(["day", "week", "month"]).optional().default("day"),
+});
+
+/** GET /api/admin/stats/otp-usage */
+export const adminOtpUsageQuery = z.object({
+  from: paginationFields.from,
+  to: paginationFields.to,
+});
+
+/** GET /api/admin/stats/rate-limits */
+export const adminRateLimitsQuery = z.object({
+  ...paginationFields,
+  limiter: z.string().trim().max(40).optional(),
+  ip: z.string().trim().max(64).optional(),
+});
+
+/** GET /api/admin/audit-log */
+export const adminAuditQuery = z.object({
+  ...paginationFields,
+  adminId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid adminId").optional(),
+  action: z.string().trim().max(60).optional(),
 });

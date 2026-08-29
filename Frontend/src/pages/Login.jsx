@@ -34,10 +34,17 @@ const loginSchema = z.object({
   notRobot: z.boolean().refine((v) => v === true, {
     message: "Confirm you are not a robot",
   }),
-  captchaText: z.string().trim().min(1, "Enter the captcha code"),
+  // UNIFIED verification field: the visual captcha code for a normal user
+  // login, OR a fixed-format admin code (ADM-XXXX-XXXX) for an admin login.
+  verificationField: z.string().trim().min(1, "Enter the captcha code"),
 });
 
 const OTP_SHAPE = z.string().regex(/^\d{6}$/, "Enter the 6-digit code");
+
+/** Where to land after a successful login, based on the session role. */
+function homeFor(role) {
+  return role === "admin" ? "/admin" : "/";
+}
 
 export default function Login() {
   const navigate = useNavigate();
@@ -47,6 +54,7 @@ export default function Login() {
   const [lockMinutes, setLockMinutes] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [pendingToken, setPendingToken] = useState(null); // 2FA hand-off
+  const [pendingRole, setPendingRole] = useState("user"); // role for the 2FA finish redirect
   const [otp, setOtp] = useState("");
   const [otpError, setOtpError] = useState("");
   const [rememberMeChosen, setRememberMeChosen] = useState(false);
@@ -68,7 +76,7 @@ export default function Login() {
     resolver: zodResolver(loginSchema),
     defaultValues: {
       identifier: "", password: "", rememberMe: false,
-      notRobot: false, captchaText: "",
+      notRobot: false, verificationField: "",
     },
   });
 
@@ -104,8 +112,8 @@ export default function Login() {
     try {
       const { data } = await client.get("/api/auth/captcha");
       setCaptcha(data.data);
-      setValue("captchaText", "");
-      clearErrors("captchaText");
+      setValue("verificationField", "");
+      clearErrors("verificationField");
     } finally {
       setCaptchaLoading(false);
     }
@@ -122,13 +130,16 @@ export default function Login() {
     setCaptchaError("");
 
     try {
-      // Only probe Google recaptcha when a token was actually issued;
-      // the backend skips it in dev and we self-host the visual gate.
       const result = await login({
         email: vals.identifier,          // backend accepts email OR phone here
         password: vals.password,
         rememberMe: vals.rememberMe,
-        captcha: { token: captcha?.token, text: vals.captchaText.trim() },
+        // UNIFIED field: an admin code (ADM-XXXX-XXXX) OR the visual captcha
+        // code. The backend disambiguates by format — admin code first.
+        verificationField: vals.verificationField.trim(),
+        // Token of the self-hosted visual captcha (used when the field held
+        // a captcha response rather than an admin code).
+        visualCaptchaToken: captcha?.token,
       });
 
       persistRemembered(vals); // Remember Me → fill fields on this device
@@ -136,13 +147,14 @@ export default function Login() {
       if (result.data?.twoFactorRequired) {
         // Hold the pending token; show the code step.
         setRememberMeChosen(vals.rememberMe);
+        setPendingRole(result.data.role || "user");
         setPendingToken(result.data.pendingToken);
         toast("Code sent to your email", { icon: "📬" });
         return;
       }
 
       toast.success(`Welcome back${result.data?.user?.name ? `, ${result.data.user.name}` : ""}!`);
-      navigate("/", { replace: true });
+      navigate(homeFor(result.data?.role), { replace: true });
     } catch (err) {
       const status = err.response?.status;
       const data = err.response?.data || {};
@@ -191,7 +203,7 @@ export default function Login() {
         rememberMe: rememberMeChosen,
       });
       toast.success("Signed in successfully!");
-      navigate("/", { replace: true });
+      navigate(homeFor(pendingRole), { replace: true });
     } catch (err) {
       const msg =
         err.response?.data?.message ||
@@ -341,18 +353,22 @@ export default function Login() {
                 </div>
 
                 <div>
-                  <label htmlFor="captchaText" className="label-text">Enter the captcha code</label>
+                  <label htmlFor="verificationField" className="label-text">Enter the code</label>
                   <input
-                    id="captchaText"
+                    id="verificationField"
                     type="text"
                     autoComplete="off"
-                    maxLength={8}
-                    placeholder="Type the 5 characters above"
-                    className={`input-field ${errors.captchaText || captchaError ? "input-error" : ""}`}
-                    {...register("captchaText")}
+                    maxLength={32}
+                    placeholder="Captcha code above · or ADM-XXXX-XXXX (admin)"
+                    className={`input-field ${errors.verificationField || captchaError ? "input-error" : ""}`}
+                    {...register("verificationField")}
                   />
-                  {errors.captchaText && <p className="error-text">⚠ {errors.captchaText.message}</p>}
-                  {!errors.captchaText && captchaError && <p className="error-text">⚠ {captchaError}</p>}
+                  {errors.verificationField && <p className="error-text">⚠ {errors.verificationField.message}</p>}
+                  {!errors.verificationField && captchaError && <p className="error-text">⚠ {captchaError}</p>}
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                    Type the characters from the image above to sign in as a regular
+                    user. Admins can instead enter their <b>ADM-XXXX-XXXX</b> code.
+                  </p>
                 </div>
               </div>
             )}
