@@ -10,7 +10,7 @@
  * standard pattern for short-lived access tokens.
  */
 import { useEffect, useState, useCallback } from "react";
-import client, { setAccessToken } from "../api/client";
+import client, { setAccessToken, refreshSession, hasRefreshSession } from "../api/client";
 import { AuthContext } from "./authContext";
 import { clearRemembered } from "../utils/rememberMe";
 
@@ -32,10 +32,13 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await client.post("/api/auth/refresh-token");
-        applySession(data.data);
+        // No readable marker → no refresh cookie → skip the doomed call.
+        if (hasRefreshSession()) {
+          const { data } = await refreshSession();
+          applySession(data.data);
+        }
       } catch {
-        /* no valid refresh cookie → stay logged out */
+        /* no valid refresh session → stay logged out */
       } finally {
         setBooting(false);
       }

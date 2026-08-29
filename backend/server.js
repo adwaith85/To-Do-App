@@ -1,13 +1,3 @@
-/**
- * Server entry point.
- *
- * Responsibilities only:
- *   1. connect to MongoDB
- *   2. start HTTP listener
- *   3. graceful shutdown on SIGINT/SIGTERM
- *
- * All Express wiring lives in src/app.js.
- */
 import { createApp } from "./src/app.js";
 import { connectDB, disconnectDB } from "./src/config/db.js";
 import { env } from "./src/config/env.js";
@@ -16,26 +6,52 @@ async function bootstrap() {
   await connectDB();
 
   const app = createApp();
+
   const server = app.listen(env.port, () => {
-    console.log(`[server] API listening on http://localhost:${env.port} (${env.nodeEnv})`);
+    console.log(
+      `[server] API listening on http://localhost:${env.port} (${env.nodeEnv})`
+    );
   });
 
-  /* ---- Graceful shutdown: stop accepting, close DB, exit ---- */
+  let isShuttingDown = false;
+
   const shutdown = async (signal) => {
+    if (isShuttingDown) return;
+
+    isShuttingDown = true;
+
     console.log(`\n[server] ${signal} received — shutting down...`);
-    server.close(async () => {
+
+    // const forceExitTimer = setTimeout(() => {
+    //   console.error("[server] Forced shutdown after timeout");
+    // }, 10_000);
+
+    forceExitTimer.unref();
+
+    try {
+      await new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) return reject(error);
+          resolve();
+        });
+      });
+
       await disconnectDB();
+
+      console.log("[server] Shutdown complete");
       process.exit(0);
-    });
-    // Force-exit if connections refuse to drain within 10s.
-    setTimeout(() => process.exit(1), 10_000).unref();
+    } catch (error) {
+      console.error("[server] Shutdown error:", error);
+      process.exit(1);
+    }
   };
 
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
 }
 
 bootstrap().catch((error) => {
-  console.error("[server] Fatal startup error:", error);
+  console.error("[server] Fatal startup error:");
+  console.error(error);
   process.exit(1);
 });

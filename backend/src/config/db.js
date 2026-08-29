@@ -1,31 +1,49 @@
-/**
- * MongoDB connection helper.
- *
- * Keeps connection logic out of the entry point so `server.js` stays tiny
- * and the database layer has a single home.
- */
 import mongoose from "mongoose";
 import { env } from "./env.js";
 
+const CONNECT_TIMEOUT_MS = 10_000;
+
 export async function connectDB() {
   try {
-    // Some networks use NAT64 (IPv6-only with translation to IPv4), which the MongoDB driver
-    // can hang on when it tries IPv6 first. If you face issues, you might need { family: 4 }.
-    // However, for MongoDB Atlas (mongodb+srv://), forcing family: 4 often causes ETIMEDOUT.
-    const connection = await mongoose.connect(env.mongoUri);
-    console.log(`[db] Connected to MongoDB → ${connection.connection.host}/${connection.connection.name}`);
-  } catch (error) {
-    console.error("[db] Initial connection failed:", error.message);
-    // Exit the process: without a database the API cannot serve requests.
-    process.exit(1);
-  }
+    // Prevent unnecessary duplicate connection attempts.
+    if (mongoose.connection.readyState === 1) {
+      console.log("[db] Already connected");
+      return;
+    }
 
-  // Surface errors that happen AFTER the initial connection (e.g. DB goes down).
-  mongoose.connection.on("error", (err) => console.error("[db] Runtime error:", err.message));
-  mongoose.connection.on("disconnected", () => console.warn("[db] Disconnected from MongoDB"));
+    await mongoose.connect(env.mongoUri, {
+      serverSelectionTimeoutMS: CONNECT_TIMEOUT_MS,
+      connectTimeoutMS: CONNECT_TIMEOUT_MS,
+      bufferCommands: false,
+      maxPoolSize: 10,
+      retryWrites: true,
+    });
+
+    console.log(
+      `[db] Connected → ${mongoose.connection.host}/${mongoose.connection.name}`
+    );
+  } catch (error) {
+    console.error("[db] Could not connect to MongoDB:");
+    console.error(error);
+
+    // Let server.js decide what to do.
+    throw error;
+  }
 }
 
 export async function disconnectDB() {
-  await mongoose.disconnect();
-  console.log("[db] Connection closed");
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
+    console.log("[db] Connection closed");
+  }
 }
+
+mongoose.connection.on("error", (err) => {
+  console.error("[db] Runtime error:", err.message);
+});
+
+mongoose.connection.on("disconnected", () => {
+  console.warn(
+    "[db] Disconnected — subsequent queries will fail fast until reconnect."
+  );
+});

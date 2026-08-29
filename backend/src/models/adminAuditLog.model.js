@@ -18,6 +18,7 @@ export const ADMIN_ACTIONS = [
   "deactivate_user",
   "reactivate_user",
   "force_logout_user",
+  "revoke_session",
   "restore_todo",
   "purge_todo",
 ];

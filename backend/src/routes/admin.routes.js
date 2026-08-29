@@ -9,7 +9,7 @@
 import { Router } from "express";
 import { validate } from "../middleware/validate.middleware.js";
 import { requireAuth, authorize } from "../middleware/auth.middleware.js";
-import { mongoIdParamSchema } from "../validations/index.js";
+import { mongoIdParamSchema, sessionIdParamSchema } from "../validations/index.js";
 import {
   adminUsersQuery,
   adminLoginHistoryQuery,
@@ -20,6 +20,7 @@ import {
   adminDeletedTodosQuery,
   adminSignupsQuery,
   adminOtpUsageQuery,
+  adminLoginTrendQuery,
   adminRateLimitsQuery,
   adminAuditQuery,
 } from "../validations/index.js";
@@ -31,6 +32,7 @@ import {
   deactivateUser,
   reactivateUser,
   forceLogoutUser,
+  revokeUserSession,
   listUserSessions,
   listLoginHistory,
   listLoginFailures,
@@ -43,6 +45,7 @@ import {
   statsOverview,
   statsSignups,
   statsOtpUsage,
+  statsLoginTrend,
   statsRateLimits,
   listAuditLog,
 } from "../controllers/admin.controller.js";
@@ -61,6 +64,7 @@ router.patch("/users/:id/deactivate", validate({ params: mongoIdParamSchema }), 
 router.patch("/users/:id/reactivate", validate({ params: mongoIdParamSchema }), reactivateUser);
 router.delete("/users/:id/sessions", validate({ params: mongoIdParamSchema }), forceLogoutUser);
 router.get("/users/:id/sessions", validate({ params: mongoIdParamSchema }), listUserSessions);
+router.delete("/users/:id/sessions/:sessionId", validate({ params: sessionIdParamSchema }), revokeUserSession);
 
 /* ---- Section B: login & security ---- */
 router.get("/login-history", validate({ query: adminLoginHistoryQuery }), listLoginHistory);
@@ -78,6 +82,7 @@ router.delete("/todos/:id/purge", validate({ params: mongoIdParamSchema }), purg
 router.get("/stats/overview", statsOverview);
 router.get("/stats/signups", validate({ query: adminSignupsQuery }), statsSignups);
 router.get("/stats/otp-usage", validate({ query: adminOtpUsageQuery }), statsOtpUsage);
+router.get("/stats/login-trend", validate({ query: adminLoginTrendQuery }), statsLoginTrend);
 router.get("/stats/rate-limits", validate({ query: adminRateLimitsQuery }), statsRateLimits);
 
 /* ---- Section E: audit log ---- */

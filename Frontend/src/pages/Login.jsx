@@ -9,6 +9,10 @@
  *     { twoFactorRequired, pendingToken } and we reveal STEP 2 inline:
  *     a 6-digit email code that completes the sign-in.
  *
+ * The verification field is simply a CAPTCHA to every visitor. (The backend
+ * transparently accepts admin codes here too, but that is never surfaced in
+ * this UI — regular users have no way to know that path exists.)
+ *
  * Error choreography:
  *   CAPTCHA_FAILED (400 with code) → refresh image, clear the code input
  *   ACCOUNT_LOCKED (423)           → amber banner with minutes remaining
@@ -34,8 +38,7 @@ const loginSchema = z.object({
   notRobot: z.boolean().refine((v) => v === true, {
     message: "Confirm you are not a robot",
   }),
-  // UNIFIED verification field: the visual captcha code for a normal user
-  // login, OR a fixed-format admin code (ADM-XXXX-XXXX) for an admin login.
+  // Visual captcha response — the single "human check" a visitor sees.
   verificationField: z.string().trim().min(1, "Enter the captcha code"),
 });
 
@@ -134,11 +137,9 @@ export default function Login() {
         email: vals.identifier,          // backend accepts email OR phone here
         password: vals.password,
         rememberMe: vals.rememberMe,
-        // UNIFIED field: an admin code (ADM-XXXX-XXXX) OR the visual captcha
-        // code. The backend disambiguates by format — admin code first.
+        // Verification field: the visual captcha response. (The backend can
+        // also recognize an admin code here, but that stays invisible on purpose.)
         verificationField: vals.verificationField.trim(),
-        // Token of the self-hosted visual captcha (used when the field held
-        // a captcha response rather than an admin code).
         visualCaptchaToken: captcha?.token,
       });
 
@@ -359,16 +360,12 @@ export default function Login() {
                     type="text"
                     autoComplete="off"
                     maxLength={32}
-                    placeholder="Captcha code above · or ADM-XXXX-XXXX (admin)"
+                    placeholder="Type the captcha code above"
                     className={`input-field ${errors.verificationField || captchaError ? "input-error" : ""}`}
                     {...register("verificationField")}
                   />
                   {errors.verificationField && <p className="error-text">⚠ {errors.verificationField.message}</p>}
                   {!errors.verificationField && captchaError && <p className="error-text">⚠ {captchaError}</p>}
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                    Type the characters from the image above to sign in as a regular
-                    user. Admins can instead enter their <b>ADM-XXXX-XXXX</b> code.
-                  </p>
                 </div>
               </div>
             )}

@@ -117,11 +117,14 @@ export const listUsers = asyncHandler(async (req, res) => {
   const size = Math.min(100, parseInt(limit, 10));
 
   const filter = {};
+  // Every "or" condition (keyword search + unverified) is merged into ONE
+  // $or array below so no branch can silently drop the other's match.
+  const ors = [];
 
   // Free-text search across name / email / phone.
   if (search) {
     const re = new RegExp(String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    filter.$or = [{ name: re }, { email: re }, { phone: re }];
+    ors.push({ name: re }, { email: re }, { phone: re });
   }
 
   if (role && ["user", "admin"].includes(role)) filter.role = role;
@@ -135,9 +138,11 @@ export const listUsers = asyncHandler(async (req, res) => {
       filter.isEmailVerified = true;
     } else if (status === "unverified") {
       filter.isDeleted = false;
-      filter.$or = [{ isEmailVerified: false }, { isActive: false }];
+      ors.push({ isEmailVerified: false }, { isActive: false });
     }
   }
+
+  if (ors.length) filter.$or = ors;
 
   const [total, rows] = await Promise.all([
     User.countDocuments(filter),
@@ -272,6 +277,30 @@ export const forceLogoutUser = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "User signed out from all devices." });
 });
 
+/** DELETE /api/admin/users/:id/sessions/:sessionId — revoke ONE device session. */
+export const revokeUserSession = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id).select("+refreshTokens");
+  if (!user) throw ApiError.notFound("User not found.");
+
+  const idx = user.refreshTokens.findIndex(
+    (s) => String(s._id) === req.params.sessionId
+  );
+  if (idx === -1) throw ApiError.notFound("Session not found.");
+
+  const session = user.refreshTokens[idx];
+  user.refreshTokens.splice(idx, 1);
+  await user.save();
+
+  await logAdminAction({
+    adminId: req.user._id, action: "revoke_session", targetType: "Session",
+    targetId: user._id,
+    details: { sessionId: req.params.sessionId, device: session.device, ip: session.ip },
+    req,
+  });
+
+  res.status(200).json({ success: true, message: "Session revoked from that device." });
+});
+
 /** GET /api/admin/users/:id/sessions — active sessions for a user. */
 export const listUserSessions = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id).select("+refreshTokens");
@@ -377,7 +406,7 @@ export const listActiveSessions = asyncHandler(async (req, res) => {
 
   const [totalUsers, rows] = await Promise.all([
     User.countDocuments({
-      deleted: false,
+      isDeleted: false,
       $expr: { $gt: [{ $size: { $ifNull: ["$refreshTokens", []] } }, 0] },
     }),
     User.find({
@@ -578,30 +607,75 @@ export const purgeTodo = asyncHandler(async (req, res) => {
 /* Section D — System / service health                                 */
 /* ------------------------------------------------------------------ */
 
-/** GET /api/admin/stats/overview — dashboard summary numbers. */
+/**
+ * GET /api/admin/stats/overview — dashboard summary numbers.
+ *
+ * Beyond absolute counts this also returns `deltas` (today vs yesterday)
+ * so the frontend can paint honest ↑/↓ trend chips, plus a live
+ * `activeSessions` count (users holding ≥1 refresh token) for the
+ * "active sessions" card demanded by the panel spec.
+ */
 export const statsOverview = asyncHandler(async (_req, res) => {
-  const today = new Date();
+  const now = new Date();
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
 
-  const [users, verified, unverified, admins, locked, deleted, todos, otpDays, loginDays] =
-    await Promise.all([
-      User.countDocuments(),
-      User.countDocuments({ isEmailVerified: true }),
-      User.countDocuments({ isEmailVerified: false }),
-      User.countDocuments({ role: "admin" }),
-      User.countDocuments({ lockUntil: { $gt: new Date() } }),
-      User.countDocuments({ isDeleted: true }),
-      Todo.countDocuments({ isDeleted: false }),
-      Otp.countDocuments({ createdAt: { $gte: today } }),
-      LoginHistory.countDocuments({ createdAt: { $gte: today } }),
-    ]);
+  const FAILED_STATUSES = ["failed", "failed_password", "failed_locked", "failed_otp"];
+  const activeSessionsFilter = {
+    $expr: { $gt: [{ $size: { $ifNull: ["$refreshTokens", []] } }, 0] },
+  };
+
+  const [
+    users, verified, unverified, admins, locked, deleted, todos,
+    otpDays, loginDays, failedToday,
+    usersToday, usersYesterday, todosToday, todosYesterday,
+    loginYesterday, failedYesterday, activeSessions,
+  ] = await Promise.all([
+    User.countDocuments(),
+    User.countDocuments({ isEmailVerified: true }),
+    User.countDocuments({ isEmailVerified: false }),
+    User.countDocuments({ role: "admin" }),
+    User.countDocuments({ lockUntil: { $gt: new Date() } }),
+    User.countDocuments({ isDeleted: true }),
+    Todo.countDocuments({ isDeleted: false }),
+    Otp.countDocuments({ createdAt: { $gte: today } }),
+    LoginHistory.countDocuments({ createdAt: { $gte: today } }),
+    LoginHistory.countDocuments({ createdAt: { $gte: today }, status: { $in: FAILED_STATUSES } }),
+    User.countDocuments({ createdAt: { $gte: today, $lt: tomorrow } }),
+    User.countDocuments({ createdAt: { $gte: yesterday, $lt: today } }),
+    Todo.countDocuments({ createdAt: { $gte: today, $lt: tomorrow }, isDeleted: false }),
+    Todo.countDocuments({ createdAt: { $gte: yesterday, $lt: today }, isDeleted: false }),
+    LoginHistory.countDocuments({ createdAt: { $gte: yesterday, $lt: today } }),
+    LoginHistory.countDocuments({ createdAt: { $gte: yesterday, $lt: today }, status: { $in: FAILED_STATUSES } }),
+    User.countDocuments(activeSessionsFilter),
+  ]);
+
+  const trend = (todayVal, yesterdayVal) => {
+    if (yesterdayVal === 0 && todayVal === 0) return 0;
+    if (yesterdayVal === 0) return todayVal > 0 ? 100 : 0;
+    return Math.round(((todayVal - yesterdayVal) / yesterdayVal) * 100);
+  };
 
   res.status(200).json({
     success: true,
     data: {
       users: { total: users, verified, unverified, admins, locked, deactivated: deleted },
       todos,
-      todays: { otpRequests: otpDays, loginEvents: loginDays },
+      activeSessions,
+      todays: {
+        otpRequests: otpDays,
+        loginEvents: loginDays,
+        failedLogins: failedToday,
+        todosCreated: todosToday,
+      },
+      deltas: {
+        users: trend(usersToday, usersYesterday),
+        todos: trend(todosToday, todosYesterday),
+        logins: trend(loginDays, loginYesterday),
+        failedLogins: trend(failedToday, failedYesterday),
+      },
       uptime: process.uptime(),
       dbConnected: true,
     },
@@ -659,6 +733,43 @@ export const statsOtpUsage = asyncHandler(async (req, res) => {
       byType: Object.fromEntries(byType.map((t) => [t._id, t.count])),
       verified: byStatus.find((s) => s._id === true)?.count || 0,
       unverified: byStatus.find((s) => s._id === false)?.count || 0,
+    },
+  });
+});
+
+/** GET /api/admin/stats/login-trend — daily success/failed login counts.
+ * Feeds the dashboard's login success/fail trend line chart. */
+export const statsLoginTrend = asyncHandler(async (req, res) => {
+  const q = req.validatedQuery || {};
+  const days = Math.min(90, Math.max(7, q.days ?? 14));
+  const to = q.to ? new Date(q.to) : new Date();
+  const from = q.from ? new Date(q.from) : new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+
+  const FAILED_STATUSES = ["failed", "failed_password", "failed_locked", "failed_otp"];
+  const rows = await LoginHistory.aggregate([
+    { $match: { createdAt: { $gte: from, $lte: to } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+        success: { $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] } },
+        failed: { $sum: { $cond: [{ $in: ["$status", FAILED_STATUSES] }, 1, 0] } },
+        total: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      from,
+      to,
+      points: rows.map((d) => ({
+        bucket: d._id,
+        success: d.success,
+        failed: d.failed,
+        total: d.total,
+      })),
     },
   });
 });

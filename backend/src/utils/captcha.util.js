@@ -79,7 +79,7 @@ export async function assertCaptcha(token, expectedAction) {
 const CAPTCHA_TTL_MS = 5 * 60 * 1000;
 const CODE_LENGTH = 5;
 // No 0/O/1/I — avoids read-back confusion.
-const CODE_ALPHABET = "ACDEFGHJKLMNPRTUVWXY34679";
+const CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
 // Black-on-white, like classic captchas — ink greys only, no colour fill.
 const CHAR_COLORS = ["#111827", "#1f2937", "#374151"];
 

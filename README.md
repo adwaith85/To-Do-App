@@ -6,6 +6,7 @@ login, device session management, password reset, and a full audit trail.
 
 ```
 Todo-App/
+├── .gitignore                    ignores node_modules/, dist/, .env.*, *.pem, …
 ├── backend/                     Express API (ES modules)
 │   ├── server.js                entry point
 │   ├── src/
@@ -20,16 +21,17 @@ Todo-App/
 │   │   ├── utils/               jwt, password, otp, mailer, captcha, history,
 │   │   │                        adminAudit…
 │   │   └── validations/         all Zod schemas
-│   └── scripts/generateAdminCode.js   promote a user + mint an admin code
 └── Frontend/                    React 19 + Tailwind v4 (Vite)
     └── src/
         ├── api/client.js        axios + bearer + silent refresh + CSRF echo
         ├── context/             AuthProvider / useAuth
         ├── components/          AuthLayout, ProtectedRoute, PublicRoute,
-        │                        AdminRoute, AdminLayout, PasswordStrength, Spinner
+        │                        AdminProtectedRoute (role-gated), AdminLayout,
+        │                        PasswordStrength, Spinner, admin/ (ui kit, utils)
         └── pages/               Login, Register, VerifyOtp,
                                  ForgotPassword, ResetPassword, Todos
-                                 admin/ (Dashboard, Users, Security, Todos, Audit)
+                                 admin/ (Dashboard, Users, UserDetail, Security,
+                                 Todos, Audit) — lazy-loaded
 ```
 
 ## Quick start
@@ -98,10 +100,11 @@ The backend reads everything from `backend/.env`. Highlights:
   rotated token triggers theft response (revoke everything)
 - Role-based access: `requireAuth` + `authorize("admin")`
 - Unified login + Admin Monitor panel: an admin promotes a user to
-  `role: "admin"` in MongoDB and runs `node scripts/generateAdminCode.js`
-  to mint a hashed **admin code**; admins then type `ADM-XXXX-XXXX` into
-  the **same** login verification field (normally the captcha) to get an
-  admin-session token and land in `/admin`. Format disambiguates the two.
+  `role: "admin"` in MongoDB and stores a **bcrypt-hashed admin code** on
+  their account; the login page is **captcha-only** in the UI, but the
+  backend silently also accepts `ADM-XXXX-XXXX` in the same verification
+  field, yielding a `role: "admin"` session token. The admin ui gives no
+  hint that a code exists.
 - Global error handler — no stack traces leak in production
 
 **JWT strategy**
@@ -118,40 +121,55 @@ The backend reads everything from `backend/.env`. Highlights:
 ## Admin Monitoring Panel
 
 There is **no separate admin login page** — admins use the exact same login
-page as everyone else. The role is decided purely by the verification field:
+page as everyone else, and that page **looks purely like a todo app's**:
 
 - **Normal user** → type the **visual captcha code** from the image.
-- **Admin** → type their **admin code** (`ADM-XXXX-XXXX`). The backend tries
-  an exact hash match against that user's stored code **first**, falls back
-  to captcha validation otherwise, and the **password must still match**.
-  A matching admin code yields a `role: "admin"` access token → you land in
-  `/admin`. Every `/api/admin/*` route runs `requireAuth + authorize("admin")`.
+- **Admin** → the UI shows nothing extra, but the backend also tries an
+  exact bcrypt match of the typed value against that user's stored **admin
+  code** (`ADM-XXXX-XXXX`) **first**, falls back to captcha validation
+  otherwise, and the **password must still match**. A matching admin code
+  yields a `role: "admin"` access token → you land in `/admin`. Every
+  `/api/admin/*` route runs `requireAuth + authorize("admin")`, so the
+  frontend role guard (`AdminProtectedRoute`) is UX only — the backend is
+  the security boundary.
 
 ### Promote a user to admin
 
+Promotion is done directly in MongoDB (no helper script ships in the repo):
+
 1. Find the user in MongoDB (Compass/shell). Set `role: "admin"`.
-2. Generate + hash an admin code (from `backend/`):
+2. Create a bcrypt hash of the code you'll give them (6-digit or
+   `ADM-XXXX-XXXX`), e.g. from `backend/`:
    ```bash
-   node scripts/generateAdminCode.js <userId>          # random ADM-XXXX-XXXX
-   node scripts/generateAdminCode.js <userId> ADM-MY-CODE   # your own
+   node -e "const b=require('bcryptjs');console.log(b.hashSync('ADM-MY-CODE',12))"
    ```
-   It hashes the code with bcrypt into `user.adminCode` and prints the plain
-   code **once**. Give it to the admin separately — it is never stored in
+3. On that user, set `adminCode` to the hash and `adminCodeSetAt` to now.
+   Give the plaintext code to the admin separately — it is never stored in
    plaintext.
-3. The admin types that code into the login verification field to reach
+4. The admin types that code into the login verification field to reach
    the panel. (An admin who instead uses the captcha signs in as a normal
    user and cannot open the admin panel.)
 
 ### What the panel monitors
 
-- **Dashboard** — user/todo totals, signups over time, OTP usage, uptime.
-- **Users** — list/search/filter, single-user profile + activity timeline,
-  lock/unlock, deactivate/reactivate, force sign-out, active sessions.
-- **Login & Security** — full login-history table, failed-attempt grouping
-  by IP & user, active sessions, rate-limit hits.
+All admin pages share a dark "liquid-glass" slate theme, auto-refresh
+every 30s, surface toasts for every action, and gate destructive actions
+behind confirmation modals.
+
+- **Dashboard** — user/todo totals with day-over-day trend chips, signups
+  over time, login success/failure trend, todos-by-status pie, system
+  health + priority bars (recharts).
+- **Users** — list/search/filter with sortable columns, lock/unlock,
+  deactivate/reactivate, force sign-out, all with confirm modals + toasts.
+- **User detail** (`/admin/users/:id`) — full profile, soft todo stats,
+  security activity timeline, and per-session revoke.
+- **Login & Security** — login-history table (CSV export), failed-attempt
+  grouping by IP & user, all active sessions with per-session revoke,
+  rate-limit hits, risky-activity alerts.
 - **Todos** — all todos across users, status/priority stats, most-active
   users, recycle bin (restore or purge soft-deleted todos).
-- **Audit Log** — every admin action itself is recorded in `AdminAuditLog`.
+- **Audit Log** — every admin action (including `revoke_session`) is
+  recorded in `AdminAuditLog`.
 
 ## Manual testing
 
@@ -188,6 +206,7 @@ logout. No Postman or automated suite is required.
 | PATCH | `/api/admin/users/:id/reactivate` | admin | reactivate account |
 | DELETE | `/api/admin/users/:id/sessions` | admin | force logout (all sessions) |
 | GET  | `/api/admin/users/:id/sessions` | admin | list user's active sessions |
+| DELETE | `/api/admin/users/:id/sessions/:sessionId` | admin | revoke one of the user's sessions |
 | GET  | `/api/admin/login-history` | admin | filterable login history |
 | GET  | `/api/admin/login-history/failed` | admin | failures by IP/user |
 | GET  | `/api/admin/sessions/active` | admin | all active sessions |
@@ -198,6 +217,7 @@ logout. No Postman or automated suite is required.
 | DELETE | `/api/admin/todos/:id/purge` | admin | permanently delete |
 | GET  | `/api/admin/stats/overview` | admin | dashboard summary |
 | GET  | `/api/admin/stats/signups` | admin | signups over time |
+| GET  | `/api/admin/stats/login-trend` | admin | login success/failure trend (`days`/`from`/`to`) |
 | GET  | `/api/admin/stats/otp-usage` | admin | OTP sent vs verified |
 | GET  | `/api/admin/stats/rate-limits` | admin | rate-limit hit log |
 | GET  | `/api/admin/audit-log` | admin | admin actions log |

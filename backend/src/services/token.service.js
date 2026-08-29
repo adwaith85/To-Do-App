@@ -52,18 +52,28 @@ export function refreshCookieOptions(maxAgeMs = env.jwt.refreshTtlMs) {
 }
 
 export function setRefreshCookie(res, rawToken, { rememberMe = false } = {}) {
-  res.cookie(
-    env.cookies.refreshTokenName,
-    rawToken,
-    refreshCookieOptions(
-      rememberMe ? env.jwt.refreshRememberTtlMs : env.jwt.refreshTtlMs
-    )
-  );
+  const maxAgeMs = rememberMe ? env.jwt.refreshRememberTtlMs : env.jwt.refreshTtlMs;
+  res.cookie(env.cookies.refreshTokenName, rawToken, refreshCookieOptions(maxAgeMs));
+  res.cookie(env.cookies.sessionMarkerName, "1", sessionMarkerOptions(maxAgeMs));
+}
+
+/** Readable marker the SPA can see (no httpOnly) so it knows a session
+ *  exists. Path "/" so document.cookie can see it on any SPA page.
+ *  @param {number} [maxAgeMs] - keep it aligned with the refresh cookie. */
+export function sessionMarkerOptions(maxAgeMs = env.jwt.refreshTtlMs) {
+  return {
+    httpOnly: false,
+    secure: env.isProd,
+    sameSite: env.cookies.sameSite,
+    path: "/",
+    maxAge: maxAgeMs,
+  };
 }
 
 export function clearRefreshCookie(res) {
   // Must match the original options for the browser to remove it.
   res.clearCookie(env.cookies.refreshTokenName, refreshCookieOptions());
+  res.clearCookie(env.cookies.sessionMarkerName, sessionMarkerOptions());
 }
 
 /** Read the raw refresh token from the incoming request cookie jar. */

@@ -72,6 +72,10 @@ export const env = {
   cookies: {
     refreshTokenName: process.env.REFRESH_TOKEN_COOKIE_NAME || "refreshToken",
     csrfTokenName: process.env.CSRF_COOKIE_NAME || "csrfToken",
+    // Readable (non-httpOnly) companion to the refresh cookie. Lets the SPA
+    // know a refresh session exists so it never fires a doomed refresh call
+    // that would surface a 401 in the console for logged-out visitors.
+    sessionMarkerName: process.env.SESSION_MARKER_COOKIE_NAME || "appSession",
     // "lax" fits same-site deployments (localhost dev included);
     // switch to "none" (+ HTTPS) only if API and client live on different sites.
     sameSite: process.env.COOKIE_SAMESITE || "lax",

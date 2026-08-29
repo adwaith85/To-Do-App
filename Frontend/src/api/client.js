@@ -33,14 +33,25 @@ export const setAccessToken = (token) => {
   accessToken = token;
 };
 
-/* ---- CSRF double-submit helper ----
- * The backend drops a readable `csrfToken` cookie; every state-changing
- * auth request echoes it back as a header. Cookies are shared across
- * ports on localhost, so the SPA can read what the API set.
+/* ---- Cookie helpers ----
+ * Cookies are shared across ports on localhost, so the SPA can read what
+ * the API set. The backend sets a readable `appSession` marker alongside
+ * the httpOnly refresh token; presence means a session exists right now.
  */
-function csrfTokenFromCookie() {
-  const match = /(?:^|;\s*)csrfToken=([^;]*)/.exec(document.cookie || "");
+const SESSION_MARKER = "appSession";
+
+function readCookie(name) {
+  const match = new RegExp(`(?:^|;\\s*)${name}=([^;]*)`).exec(document.cookie || "");
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+function csrfTokenFromCookie() {
+  return readCookie("csrfToken");
+}
+
+/** Whether the backend currently holds a refresh session for this browser. */
+export function hasRefreshSession() {
+  return readCookie(SESSION_MARKER) !== null;
 }
 
 /* ---- Request interceptor: bearer token + CSRF echo ---- */
@@ -74,6 +85,35 @@ const NO_REFRESH_PATHS = [
 
 let refreshPromise = null; // single-flight guard
 
+/** ONE shared refresh call, queueing the boot restore and every concurrent
+ *  401 handler behind the same promise. Resolves to the axios response so
+ *  callers can apply the session payload. */
+export function refreshSession() {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(
+        `${API_BASE_URL}/api/auth/refresh-token`,
+        {},
+        {
+          withCredentials: true,
+          headers: { "x-csrf-token": csrfTokenFromCookie() || "" },
+        }
+      )
+      .then((res) => {
+        setAccessToken(res.data?.data?.accessToken || null);
+        return res;
+      })
+      .catch((err) => {
+        setAccessToken(null);
+        throw err;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -85,33 +125,20 @@ client.interceptors.response.use(
       status === 401 &&
       original &&                       // retryable request
       !original._retry &&               // only once per request
-      !NO_REFRESH_PATHS.some((p) => path.includes(p));
+      !NO_REFRESH_PATHS.some((p) => path.includes(p)) &&
+      hasRefreshSession();              // only when a session actually exists
 
     if (!shouldTryRefresh) return Promise.reject(error);
 
     original._retry = true;
 
     try {
-      // Share one refresh call across all concurrent 401 handlers.
-      refreshPromise ||= axios.post(
-        `${API_BASE_URL}/api/auth/refresh-token`,
-        {},
-        {
-          withCredentials: true,
-          headers: { "x-csrf-token": csrfTokenFromCookie() || "" },
-        }
-      );
-
-      const { data } = await refreshPromise;
-      setAccessToken(data.data?.accessToken || null);
+      await refreshSession();
       return client(original); // replay the failed request with new token
     } catch (refreshError) {
       // Refresh failed → session truly over. Let AuthContext react.
-      setAccessToken(null);
       window.dispatchEvent(new Event("auth:session-expired"));
       return Promise.reject(refreshError);
-    } finally {
-      refreshPromise = null;
     }
   }
 );

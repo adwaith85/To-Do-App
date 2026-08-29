@@ -2,15 +2,21 @@
  * App routes:
  *   /login /register /verify-otp /forgot-password /reset-password → guest-only
  *   /                          → protected todos dashboard
+ *   /admin/*                   → ADMIN-ONLY (AdminProtectedRoute)
  *   *                          → back home
  *
- * <Toaster> renders react-hot-toast notifications globally.
+ * Role separation: <AdminProtectedRoute> checks the SESSION role from the
+ * access token, so an admin who signed in via the shared login only reaches
+ * /admin when they presented their admin code. Everyone else is bounced to
+ * the user app ("/"). The backend repeats this check on every /api/admin/*
+ * request, so the frontend guard is UX, not security.
  */
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
-import AdminRoute from "./components/AdminRoute";
+import AdminProtectedRoute from "./components/AdminProtectedRoute";
 import AdminLayout from "./components/AdminLayout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -18,11 +24,16 @@ import VerifyOtp from "./pages/VerifyOtp";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Todos from "./pages/Todos";
-import AdminDashboard from "./pages/admin/Dashboard";
-import AdminUsers from "./pages/admin/Users";
-import AdminSecurity from "./pages/admin/Security";
-import AdminTodos from "./pages/admin/Todos";
-import AdminAudit from "./pages/admin/Audit";
+import Spinner from "./components/Spinner";
+
+// Admin pages are heavy (recharts) → lazy-loaded so the todo app bundle
+// stays small; the admin console only loads its chunk on first visit.
+const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
+const AdminUsers = lazy(() => import("./pages/admin/Users"));
+const AdminUserDetail = lazy(() => import("./pages/admin/UserDetail"));
+const AdminSecurity = lazy(() => import("./pages/admin/Security"));
+const AdminTodos = lazy(() => import("./pages/admin/Todos"));
+const AdminAudit = lazy(() => import("./pages/admin/Audit"));
 
 export default function App() {
   return (
@@ -53,29 +64,32 @@ export default function App() {
         }}
       />
 
-      <Routes>
-        {/* Guest-only pages */}
-        <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-        <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-        <Route path="/verify-otp" element={<PublicRoute><VerifyOtp /></PublicRoute>} />
-        <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
-        <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
+      <Suspense fallback={<Spinner label="Loading console…" />}>
+        <Routes>
+          {/* Guest-only pages */}
+          <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+          <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+          <Route path="/verify-otp" element={<PublicRoute><VerifyOtp /></PublicRoute>} />
+          <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+          <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
 
-        {/* Authenticated app */}
-        <Route path="/" element={<ProtectedRoute><Todos /></ProtectedRoute>} />
+          {/* Authenticated app */}
+          <Route path="/" element={<ProtectedRoute><Todos /></ProtectedRoute>} />
 
-        {/* Admin panel — session role must be "admin" */}
-        <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-          <Route index element={<AdminDashboard />} />
-          <Route path="users" element={<AdminUsers />} />
-          <Route path="security" element={<AdminSecurity />} />
-          <Route path="todos" element={<AdminTodos />} />
-          <Route path="audit" element={<AdminAudit />} />
-        </Route>
+          {/* Admin panel — session role must be "admin" */}
+          <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="users" element={<AdminUsers />} />
+            <Route path="users/:id" element={<AdminUserDetail />} />
+            <Route path="security" element={<AdminSecurity />} />
+            <Route path="todos" element={<AdminTodos />} />
+            <Route path="audit" element={<AdminAudit />} />
+          </Route>
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

@@ -106,11 +106,11 @@ const userSchema = new mongoose.Schema(
     },
 
     /**
-     * Admin login code — stored ONLY as a hash (SHA-256), never plaintext.
+     * Admin login code — stored ONLY as a bcrypt hash, never plaintext.
      * `select:false` keeps it out of query results unless explicitly
-     * requested (+adminCode). Admins are promoted manually in MongoDB (or
-     * via scripts/generateAdminCode.js); on the shared login page they type
-     * "ADM-XXXXXXXX" into the verification field instead of the captcha.
+     * requested (+adminCode). Admins are promoted manually in MongoDB; on
+     * the shared login page they type "ADM-XXXXXXXX" into the verification
+     * field instead of the captcha.
      */
     adminCode: {
       type: String,
@@ -266,6 +266,7 @@ userSchema.statics.revokeAllRefreshTokens = function (userId) {
 userSchema.set("toJSON", {
   transform(_doc, ret) {
     delete ret.password;
+    delete ret.adminCode; // hashed admin code must never leave the server
     delete ret.refreshTokens;
     delete ret.failedLoginAttempts;
     delete ret.lockUntil;

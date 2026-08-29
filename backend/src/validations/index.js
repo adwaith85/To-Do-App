@@ -240,6 +240,12 @@ export const mongoIdParamSchema = z.object({
   id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid id format"),
 });
 
+/** Mongoose subdocument _id (e.g. a refresh-token session) is still a 24-hex ObjectId. */
+export const sessionIdParamSchema = z.object({
+  id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid id format"),
+  sessionId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid sessionId format"),
+});
+
 /* ------------------------------------------------------------------ */
 /* Admin panel query filters                                          */
 /* ------------------------------------------------------------------ */
@@ -323,6 +329,13 @@ export const adminSignupsQuery = z.object({
 export const adminOtpUsageQuery = z.object({
   from: paginationFields.from,
   to: paginationFields.to,
+});
+
+/** GET /api/admin/stats/login-trend */
+export const adminLoginTrendQuery = z.object({
+  from: paginationFields.from,
+  to: paginationFields.to,
+  days: z.coerce.number().int().min(7).max(90).optional().default(14),
 });
 
 /** GET /api/admin/stats/rate-limits */
