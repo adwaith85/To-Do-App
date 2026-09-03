@@ -31,6 +31,16 @@ export function errorHandler(err, req, res, _next) {
     message = `Invalid value for "${err.path}"`;
   }
 
+  if (err.name === "MongoServerSelectionError" || err.name === "MongoNetworkError") {
+    statusCode = 503;
+    message = "Database temporarily unavailable. Please try again.";
+  }
+
+  if (err.name === "MongoTimeoutError" || (err.message && err.message.includes("timed out"))) {
+    statusCode = 503;
+    message = "Database request timed out. Please try again.";
+  }
+
   if (err.code === 11000) {
     // Mongo duplicate key → e.g. registering an existing email twice.
     statusCode = 409;

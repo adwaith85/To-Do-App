@@ -1,28 +1,39 @@
-/**
- * Todo routes → mounted at /api/todos.
- *
- * ALL routes are protected: requireAuth resolves the user from the Bearer
- * access token before any handler runs.
- */
 import { Router } from "express";
+import multer from "multer";
 import { validate } from "../middleware/validate.middleware.js";
 import { sanitize } from "../middleware/sanitize.middleware.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import {
   getTodos,
+  getReminders,
   createTodo,
+  updateTodo,
   toggleTodo,
   deleteTodo,
+  removeAttachment,
+  reorderTodos,
 } from "../controllers/todo.controller.js";
-import { createTodoSchema, mongoIdParamSchema } from "../validations/index.js";
+import { createTodoSchema, updateTodoSchema, mongoIdParamSchema } from "../validations/index.js";
 
 const router = Router();
+router.use(requireAuth);
 
-router.use(requireAuth); // every route below requires a valid access token
+const upload = multer({
+  dest: "uploads/",
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = /^image\/|^application\/pdf/.test(file.mimetype);
+    cb(null, ok);
+  },
+});
 
 router.get("/", getTodos);
-router.post("/", sanitize, validate({ body: createTodoSchema }), createTodo);
-router.patch("/:id", sanitize, validate({ params: mongoIdParamSchema }), toggleTodo);
+router.get("/reminders", getReminders);
+router.post("/", upload.array("files", 5), sanitize, validate({ body: createTodoSchema }), createTodo);
+router.patch("/:id", upload.array("files", 5), sanitize, validate({ params: mongoIdParamSchema }), updateTodo);
+router.patch("/:id/toggle", sanitize, validate({ params: mongoIdParamSchema }), toggleTodo);
+router.patch("/:id/reorder", sanitize, reorderTodos);
+router.delete("/:id/attachments/:attachmentId", sanitize, validate({ params: mongoIdParamSchema }), removeAttachment);
 router.delete("/:id", sanitize, validate({ params: mongoIdParamSchema }), deleteTodo);
 
 export default router;

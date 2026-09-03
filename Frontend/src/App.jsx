@@ -1,16 +1,3 @@
-/**
- * App routes:
- *   /login /register /verify-otp /forgot-password /reset-password → guest-only
- *   /                          → protected todos dashboard
- *   /admin/*                   → ADMIN-ONLY (AdminProtectedRoute)
- *   *                          → back home
- *
- * Role separation: <AdminProtectedRoute> checks the SESSION role from the
- * access token, so an admin who signed in via the shared login only reaches
- * /admin when they presented their admin code. Everyone else is bounced to
- * the user app ("/"). The backend repeats this check on every /api/admin/*
- * request, so the frontend guard is UX, not security.
- */
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
@@ -24,10 +11,10 @@ import VerifyOtp from "./pages/VerifyOtp";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Todos from "./pages/Todos";
+import Reminders from "./pages/Reminders";
+import Profile from "./pages/Profile";
 import Spinner from "./components/Spinner";
 
-// Admin pages are heavy (recharts) → lazy-loaded so the todo app bundle
-// stays small; the admin console only loads its chunk on first visit.
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/Users"));
 const AdminUserDetail = lazy(() => import("./pages/admin/UserDetail"));
@@ -38,7 +25,6 @@ const AdminAudit = lazy(() => import("./pages/admin/Audit"));
 export default function App() {
   return (
     <BrowserRouter>
-      {/* Global toast notifications — compact, frosted-glass style */}
       <Toaster
         position="top-center"
         toastOptions={{
@@ -64,7 +50,7 @@ export default function App() {
         }}
       />
 
-      <Suspense fallback={<Spinner label="Loading console…" />}>
+      <Suspense fallback={<Spinner label="Loading console..." />}>
         <Routes>
           {/* Guest-only pages */}
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
@@ -75,8 +61,10 @@ export default function App() {
 
           {/* Authenticated app */}
           <Route path="/" element={<ProtectedRoute><Todos /></ProtectedRoute>} />
+          <Route path="/reminders" element={<ProtectedRoute><Reminders /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
-          {/* Admin panel — session role must be "admin" */}
+          {/* Admin panel */}
           <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
             <Route index element={<AdminDashboard />} />
             <Route path="users" element={<AdminUsers />} />

@@ -1,32 +1,17 @@
 import mongoose from "mongoose";
 import { env } from "./env.js";
 
-const CONNECT_TIMEOUT_MS = 10_000;
-
 export async function connectDB() {
+  if (mongoose.connection.readyState === 1) {
+    console.log("[db] Already connected");
+    return;
+  }
+
   try {
-    // Prevent unnecessary duplicate connection attempts.
-    if (mongoose.connection.readyState === 1) {
-      console.log("[db] Already connected");
-      return;
-    }
-
-    await mongoose.connect(env.mongoUri, {
-      serverSelectionTimeoutMS: CONNECT_TIMEOUT_MS,
-      connectTimeoutMS: CONNECT_TIMEOUT_MS,
-      bufferCommands: false,
-      maxPoolSize: 10,
-      retryWrites: true,
-    });
-
-    console.log(
-      `[db] Connected → ${mongoose.connection.host}/${mongoose.connection.name}`
-    );
+    await mongoose.connect(env.mongoUri);
+    console.log(`[db] Connected → ${mongoose.connection.host}/${mongoose.connection.name}`);
   } catch (error) {
-    console.error("[db] Could not connect to MongoDB:");
-    console.error(error);
-
-    // Let server.js decide what to do.
+    console.error("[db] Connection failed:", error.message);
     throw error;
   }
 }
@@ -43,7 +28,9 @@ mongoose.connection.on("error", (err) => {
 });
 
 mongoose.connection.on("disconnected", () => {
-  console.warn(
-    "[db] Disconnected — subsequent queries will fail fast until reconnect."
-  );
+  console.warn("[db] Disconnected — will attempt to reconnect automatically.");
+});
+
+mongoose.connection.on("reconnected", () => {
+  console.log("[db] Reconnected successfully.");
 });

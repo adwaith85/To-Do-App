@@ -8,6 +8,11 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { fileURLToPath } from "url";
+import path from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import { env } from "./config/env.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -74,6 +79,8 @@ export function createApp() {
   api.get("/health", (_req, res) =>
     res.json({ success: true, message: "API is healthy", uptime: process.uptime() })
   );
+
+  api.use("/uploads", express.static(path.join(__dirname, "../../uploads")));
 
   api.use("/auth", authRoutes);
   api.use("/todos", todoRoutes);

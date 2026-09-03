@@ -1,29 +1,38 @@
-/**
- * Todo controller — every operation is scoped to the authenticated user.
- *
- * Ownership rule: queries ALWAYS pair `_id` with `req.user._id`, so one
- * user can never read, toggle or delete another user's todo even by
- * guessing ids. A miss returns a neutral 404 (no existence leak).
- *
- * Delete is a SOFT delete (isDeleted: true) — rows live on for a future
- * recycle-bin feature but are filtered out of every list/toggle path.
- */
 import Todo from "../models/todo.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
+import fs from "fs";
+import path from "path";
 
-/** GET /api/todos — the current user's ACTIVE todos, pinned first, newest first. */
+const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+
 export const getTodos = asyncHandler(async (req, res) => {
-  const todos = await Todo.find({ user: req.user._id, isDeleted: false }).sort({
-    isPinned: -1,
-    createdAt: -1,
-  });
+  const todos = await Todo.find({ user: req.user._id, isDeleted: false })
+    .sort({ isPinned: -1, order: 1, createdAt: -1 })
+    .maxTimeMS(10_000);
   res.status(200).json({ success: true, data: todos });
 });
 
-/** POST /api/todos — create a todo owned by the current user (all metadata). */
+export const getReminders = asyncHandler(async (req, res) => {
+  const todos = await Todo.find({
+    user: req.user._id,
+    isDeleted: false,
+    reminderAt: { $ne: null },
+  })
+    .sort({ reminderAt: 1 })
+    .maxTimeMS(10_000);
+  res.status(200).json({ success: true, data: todos });
+});
+
 export const createTodo = asyncHandler(async (req, res) => {
-  const { task, description, priority, dueDate, tags, isPinned } = req.body;
+  const { task, description, priority, dueDate, tags, isPinned, reminderAt, backgroundColor } = req.body;
+
+  const attachments = (req.files || []).map((f) => ({
+    url: `/uploads/${f.filename}`,
+    filename: f.originalname,
+    mimetype: f.mimetype,
+    size: f.size,
+  }));
 
   const todo = await Todo.create({
     task,
@@ -32,17 +41,92 @@ export const createTodo = asyncHandler(async (req, res) => {
     dueDate: dueDate || null,
     tags: tags || [],
     isPinned: Boolean(isPinned),
-    user: req.user._id, // ownership is NEVER taken from the client
+    reminderAt: reminderAt || null,
+    backgroundColor: backgroundColor || "",
+    attachments,
+    user: req.user._id,
   });
 
   res.status(201).json({ success: true, message: "Task added.", data: todo });
 });
 
-/**
- * PATCH /api/todos/:id — flip pending ⇄ completed.
- * `new: true` returns the updated doc; the user filter enforces ownership
- * and completedAt is set/cleared by the model's pre-validate hook.
- */
+export const updateTodo = asyncHandler(async (req, res) => {
+  const { task, description, priority, dueDate, tags, isPinned, reminderAt, status, backgroundColor } = req.body;
+
+  const todo = await Todo.findOne({
+    _id: req.params.id,
+    user: req.user._id,
+    isDeleted: false,
+  });
+
+  if (!todo) throw ApiError.notFound("Todo not found.");
+
+  if (task !== undefined) todo.task = task;
+  if (description !== undefined) todo.description = description;
+  if (priority !== undefined) todo.priority = priority;
+  if (dueDate !== undefined) todo.dueDate = dueDate || null;
+  if (tags !== undefined) todo.tags = tags;
+  if (isPinned !== undefined) todo.isPinned = Boolean(isPinned);
+  if (backgroundColor !== undefined) todo.backgroundColor = backgroundColor;
+  if (status !== undefined) todo.status = status;
+  if (reminderAt !== undefined) {
+    todo.reminderAt = reminderAt || null;
+    if (reminderAt) todo.reminderSent = false;
+  }
+
+  if (req.files?.length) {
+    const newAttachments = req.files.map((f) => ({
+      url: `/uploads/${f.filename}`,
+      filename: f.originalname,
+      mimetype: f.mimetype,
+      size: f.size,
+    }));
+    todo.attachments = [...(todo.attachments || []), ...newAttachments].slice(0, 5);
+  }
+
+  await todo.save();
+  res.status(200).json({ success: true, message: "Task updated.", data: todo });
+});
+
+export const removeAttachment = asyncHandler(async (req, res) => {
+  const todo = await Todo.findOne({
+    _id: req.params.id,
+    user: req.user._id,
+    isDeleted: false,
+  });
+  if (!todo) throw ApiError.notFound("Todo not found.");
+
+  const idx = todo.attachments.findIndex(
+    (a) => a._id?.toString() === req.params.attachmentId
+  );
+  if (idx === -1) throw ApiError.notFound("Attachment not found.");
+
+  const [removed] = todo.attachments.splice(idx, 1);
+  if (removed?.url) {
+    const filePath = path.join(process.cwd(), removed.url);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+  await todo.save();
+  res.status(200).json({ success: true, message: "Attachment removed.", data: todo });
+});
+
+export const reorderTodos = asyncHandler(async (req, res) => {
+  const { orders } = req.body;
+  if (!Array.isArray(orders)) throw ApiError.badRequest("orders array required");
+
+  const ops = orders.map(({ id, order }) =>
+    Todo.updateOne(
+      { _id: id, user: req.user._id },
+      { $set: { order } }
+    )
+  );
+  await Promise.all(ops);
+
+  const todos = await Todo.find({ user: req.user._id, isDeleted: false })
+    .sort({ isPinned: -1, order: 1, createdAt: -1 });
+  res.status(200).json({ success: true, data: todos });
+});
+
 export const toggleTodo = asyncHandler(async (req, res) => {
   const todo = await Todo.findOne({
     _id: req.params.id,
@@ -58,7 +142,6 @@ export const toggleTodo = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "Task updated.", data: todo });
 });
 
-/** DELETE /api/todos/:id — soft-delete a todo owned by the current user. */
 export const deleteTodo = asyncHandler(async (req, res) => {
   const todo = await Todo.findOneAndUpdate(
     { _id: req.params.id, user: req.user._id, isDeleted: false },
@@ -67,6 +150,5 @@ export const deleteTodo = asyncHandler(async (req, res) => {
   );
 
   if (!todo) throw ApiError.notFound("Todo not found.");
-
   res.status(200).json({ success: true, message: "Task deleted." });
 });

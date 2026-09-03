@@ -1,9 +1,11 @@
 import { createApp } from "./src/app.js";
 import { connectDB, disconnectDB } from "./src/config/db.js";
 import { env } from "./src/config/env.js";
+import { startReminderCron } from "./src/utils/reminder.util.js";
 
 async function bootstrap() {
   await connectDB();
+  startReminderCron();
 
   const app = createApp();
 
@@ -19,14 +21,7 @@ async function bootstrap() {
     if (isShuttingDown) return;
 
     isShuttingDown = true;
-
     console.log(`\n[server] ${signal} received — shutting down...`);
-
-    // const forceExitTimer = setTimeout(() => {
-    //   console.error("[server] Forced shutdown after timeout");
-    // }, 10_000);
-
-    forceExitTimer.unref();
 
     try {
       await new Promise((resolve, reject) => {
@@ -37,12 +32,9 @@ async function bootstrap() {
       });
 
       await disconnectDB();
-
       console.log("[server] Shutdown complete");
-      process.exit(0);
     } catch (error) {
       console.error("[server] Shutdown error:", error);
-      process.exit(1);
     }
   };
 
@@ -53,5 +45,4 @@ async function bootstrap() {
 bootstrap().catch((error) => {
   console.error("[server] Fatal startup error:");
   console.error(error);
-  process.exit(1);
 });

@@ -8,10 +8,10 @@
  *   Rate Limits   → throttling hit log
  *   Alerts        → suspicious activity feed (derived from failed logins)
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
-  History, ShieldAlert, Users, Gauge, AlertTriangle, Download, LogOut, RefreshCw,
+  History, ShieldAlert, Users, Gauge, AlertTriangle, Download, LogOut, RefreshCw, AlertOctagon,
 } from "lucide-react";
 import client from "../../api/client";
 import Spinner from "../../components/Spinner";
@@ -59,20 +59,49 @@ export default function AdminSecurity() {
   );
 }
 
+function ErrorState({ message, onRetry }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-10 text-center">
+      <AlertOctagon className="h-10 w-10 text-rose-400" />
+      <p className="text-sm text-slate-400">{message || "Something went wrong."}</p>
+      {onRetry && (
+        <button onClick={onRetry} className="admin-btn-secondary !px-3 !py-1.5 text-xs">
+          <RefreshCw className="h-3.5 w-3.5" /> Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- Login History ---------------- */
 function LoginHistoryTab() {
   const [rows, setRows] = useState(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
+  const [error, setError] = useState(null);
+  const mountedRef = useRef(true);
 
   const load = useCallback(() => {
+    setError(null);
     client.get("/api/admin/login-history", { params: { page, limit: 20, status: status || undefined } })
-      .then(({ data }) => { setRows(data.data.events); setTotal(data.data.total); })
-      .catch(() => setRows([]));
+      .then(({ data }) => {
+        if (!mountedRef.current) return;
+        setRows(data.data.events);
+        setTotal(data.data.total);
+      })
+      .catch(() => {
+        if (!mountedRef.current) return;
+        setRows([]);
+        setError("Failed to load login history.");
+      });
   }, [page, status]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    mountedRef.current = true;
+    load();
+    return () => { mountedRef.current = false; };
+  }, [load]);
 
   const exportCsv = () => {
     const head = "when,user,action,status,ip,device,reason";
@@ -108,7 +137,7 @@ function LoginHistoryTab() {
         </div>
       }
     >
-      {!rows ? <Spinner label="Loading…" /> : rows.length === 0 ? <Empty /> : (
+      {error ? <ErrorState message={error} onRetry={load} /> : !rows ? <Spinner label="Loading…" /> : rows.length === 0 ? <Empty /> : (
         <>
           <div className="overflow-x-auto">
             <table className="admin-table w-full min-w-[680px]">
@@ -143,11 +172,32 @@ function LoginHistoryTab() {
 /* ---------------- Failed attempts ---------------- */
 function FailedTab() {
   const [data, setData] = useState(null);
-  useEffect(() => {
-    client.get("/api/admin/login-history/failed").then(({ data }) => setData(data.data)).catch(() => setData(null));
+  const [error, setError] = useState(null);
+  const mountedRef = useRef(true);
+
+  const load = useCallback(() => {
+    setError(null);
+    setData(null);
+    client.get("/api/admin/login-history/failed")
+      .then(({ data }) => {
+        if (!mountedRef.current) return;
+        setData(data.data);
+      })
+      .catch(() => {
+        if (!mountedRef.current) return;
+        setError("Failed to load failure data.");
+      });
   }, []);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    load();
+    return () => { mountedRef.current = false; };
+  }, [load]);
+
+  if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <Spinner label="Loading failures…" />;
+
   const grouped = (list, key, sub) =>
     list.map((g) => ({ key: g[key], count: g.count, lastAt: g.lastAt, ips: g.ips, sub }));
   const ipRows = grouped(data.byIp, "_id");
@@ -177,7 +227,7 @@ function FailedTab() {
               <li key={String(g.key?._id || g.key)} className="flex items-center justify-between rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3">
                 <div>
                   <div className="text-sm font-semibold text-slate-300">{g.key?.email || g.sub || "Unknown user"}</div>
-                  <div className="text-[11px] text-slate-500">{g.ips?.length || g.ips?.length} IPs · last {fmtDate(g.lastAt)}</div>
+                  <div className="text-[11px] text-slate-500">{g.ips?.length || 0} IPs · last {fmtDate(g.lastAt)}</div>
                 </div>
                 <Badge tone={g.count > 10 ? "red" : g.count > 5 ? "amber" : "slate"}>{g.count} attempts</Badge>
               </li>
@@ -196,14 +246,29 @@ function SessionsTab() {
   const [page, setPage] = useState(1);
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const mountedRef = useRef(true);
 
   const load = useCallback(() => {
+    setError(null);
     client.get("/api/admin/sessions/active", { params: { page, limit: 25 } })
-      .then(({ data }) => { setRows(data.data.sessions); setTotal(data.data.total); })
-      .catch(() => setRows([]));
+      .then(({ data }) => {
+        if (!mountedRef.current) return;
+        setRows(data.data.sessions);
+        setTotal(data.data.total);
+      })
+      .catch(() => {
+        if (!mountedRef.current) return;
+        setRows([]);
+        setError("Failed to load sessions.");
+      });
   }, [page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    mountedRef.current = true;
+    load();
+    return () => { mountedRef.current = false; };
+  }, [load]);
 
   const revoke = async (s) => {
     setBusy(true);
@@ -221,7 +286,7 @@ function SessionsTab() {
 
   return (
     <Panel title="Active sessions (all users)" icon={Users} action={<Badge tone="cyan">{total} sessions</Badge>}>
-      {!rows ? <Spinner label="Loading…" /> : rows.length === 0 ? <Empty /> : (
+      {error ? <ErrorState message={error} onRetry={load} /> : !rows ? <Spinner label="Loading…" /> : rows.length === 0 ? <Empty /> : (
         <>
           <div className="overflow-x-auto">
             <table className="admin-table w-full min-w-[640px]">
@@ -272,14 +337,30 @@ function SessionsTab() {
 function RateLimitsTab() {
   const [data, setData] = useState(null);
   const [page, setPage] = useState(1);
+  const [error, setError] = useState(null);
+  const mountedRef = useRef(true);
 
   const load = useCallback(() => {
+    setError(null);
     client.get("/api/admin/stats/rate-limits", { params: { page, limit: 20 } })
-      .then(({ data }) => setData(data.data))
-      .catch(() => setData(null));
+      .then(({ data }) => {
+        if (!mountedRef.current) return;
+        setData(data.data);
+      })
+      .catch(() => {
+        if (!mountedRef.current) return;
+        setData(null);
+        setError("Failed to load rate-limit data.");
+      });
   }, [page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    mountedRef.current = true;
+    load();
+    return () => { mountedRef.current = false; };
+  }, [load]);
+
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <Panel title="Rate-limit hits" icon={Gauge}>
@@ -319,14 +400,31 @@ function RateLimitsTab() {
 /* ---------------- Suspicious alerts ---------------- */
 function AlertsTab() {
   const [data, setData] = useState(null);
-  useEffect(() => {
+  const [error, setError] = useState(null);
+  const mountedRef = useRef(true);
+
+  const load = useCallback(() => {
+    setError(null);
+    setData(null);
     Promise.all([
       client.get("/api/admin/login-history/failed").then((r) => r.data.data),
       client.get("/api/admin/login-history", { params: { status: "failed", limit: 15 } }).then((r) => r.data.data),
-    ]).then(([failures, recent]) => setData({ failures, recent: recent.events }))
-      .catch(() => setData(null));
+    ]).then(([failures, recent]) => {
+      if (!mountedRef.current) return;
+      setData({ failures, recent: recent.events });
+    }).catch(() => {
+      if (!mountedRef.current) return;
+      setError("Failed to scan for anomalies.");
+    });
   }, []);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    load();
+    return () => { mountedRef.current = false; };
+  }, [load]);
+
+  if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <Spinner label="Scanning for anomalies…" />;
 
   const highIp = (data.failures?.byIp || []).filter((g) => g.count >= 10);

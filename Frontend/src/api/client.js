@@ -22,7 +22,8 @@ export const API_BASE_URL = "http://localhost:5050";
 
 const client = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true, // send/receive the httpOnly refresh cookie
+  withCredentials: true,
+  timeout: 20_000,
 });
 
 /* ---- In-memory access token ---- */

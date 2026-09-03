@@ -42,13 +42,16 @@
 @layer base {
   html {
     color-scheme: dark;
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   body {
-    @apply min-h-screen bg-ink-950 font-sans text-slate-100 antialiased;
+    @apply min-h-screen bg-ink-800 font-sans text-slate-100 antialiased;
     background-image:
-      radial-gradient(52rem 36rem at 85% -10%, rgb(96 66 232 / 0.22), transparent 60%),
-      radial-gradient(44rem 30rem at -12% 108%, rgb(30 195 212 / 0.14), transparent 58%),
-      radial-gradient(38rem 26rem at 50% 118%, rgb(139 131 250 / 0.10), transparent 62%);
+      radial-gradient(52rem 36rem at 85% -10%, rgb(116 94 246 / 0.12), transparent 60%),
+      radial-gradient(44rem 30rem at -12% 108%, rgb(30 195 212 / 0.08), transparent 58%),
+      radial-gradient(38rem 26rem at 50% 118%, rgb(139 131 250 / 0.06), transparent 62%);
     background-attachment: fixed;
   }
   ::selection {
@@ -60,7 +63,7 @@
 @layer components {
   /* Frosted card used by every page */
   .glass-card {
-    @apply w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-10;
+    @apply w-full rounded-3xl border border-white/[0.08] bg-white/[0.06] p-8 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-10;
   }
 
   /* "Liquid glass" auth card — translucent dark, never pure white/black */
@@ -106,7 +109,7 @@
   /* Form controls — red border on error, brand ring on focus,
      green border once a field becomes valid (validation states). */
   .input-field {
-    @apply w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-brand-500 focus:bg-white/[0.07] focus:ring-4 focus:ring-brand-500/15;
+    @apply w-full rounded-xl border border-white/[0.08] bg-white/[0.06] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-brand-500 focus:bg-white/[0.09] focus:ring-4 focus:ring-brand-500/15;
   }
   .input-error {
     @apply border-rose-500/70 focus:border-rose-500 focus:ring-rose-500/15;
@@ -175,6 +178,31 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-white/20;
+}
+
+/* Smooth page transitions */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
 }
 
 /* ---------- Liquid background drift ---------- */

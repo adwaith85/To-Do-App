@@ -338,11 +338,12 @@ export const listLoginHistory = asyncHandler(async (req, res) => {
   const size = Math.min(200, parseInt(limit, 10));
 
   const [total, rows] = await Promise.all([
-    LoginHistory.countDocuments(filter),
+    LoginHistory.countDocuments(filter).maxTimeMS(10_000),
     LoginHistory.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(size)
+      .maxTimeMS(10_000)
       .lean(),
   ]);
 
@@ -360,32 +361,34 @@ export const listLoginFailures = asyncHandler(async (req, res) => {
   };
   if (Object.keys(range).length) match.createdAt = range;
 
-  const byIp = await LoginHistory.aggregate([
-    { $match: match },
-    { $group: { _id: "$ip", count: { $sum: 1 }, lastAt: { $max: "$createdAt" } } },
-    { $sort: { count: -1 } },
-    { $limit: 30 },
-  ]);
+  const [byIp, byUser] = await Promise.all([
+    LoginHistory.aggregate([
+      { $match: match },
+      { $group: { _id: "$ip", count: { $sum: 1 }, lastAt: { $max: "$createdAt" } } },
+      { $sort: { count: -1 } },
+      { $limit: 30 },
+    ]).option({ maxTimeMS: 10_000 }),
 
-  const byUser = await LoginHistory.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: "$user",
-        count: { $sum: 1 },
-        lastAt: { $max: "$createdAt" },
-        ips: { $addToSet: "$ip" },
+    LoginHistory.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$user",
+          count: { $sum: 1 },
+          lastAt: { $max: "$createdAt" },
+          ips: { $addToSet: "$ip" },
+        },
       },
-    },
-    { $sort: { count: -1 } },
-    { $limit: 30 },
+      { $sort: { count: -1 } },
+      { $limit: 30 },
+    ]).option({ maxTimeMS: 10_000 }),
   ]);
 
   // Attach user emails for the by-user view.
   const userIds = byUser.map((u) => u._id).filter(Boolean);
-  const users = await User.find({ _id: { $in: userIds } })
-    .select("name email")
-    .lean();
+  const users = userIds.length > 0
+    ? await User.find({ _id: { $in: userIds } }).select("name email").lean()
+    : [];
   const userMap = new Map(users.map((u) => [String(u._id), u]));
   const usersResolved = byUser.map((u) => ({
     user: userMap.get(String(u._id)) || null,
@@ -404,17 +407,17 @@ export const listActiveSessions = asyncHandler(async (req, res) => {
   const skip = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
   const size = Math.min(200, parseInt(limit, 10));
 
+  const activeSessionsFilter = {
+    $expr: { $gt: [{ $size: { $ifNull: ["$refreshTokens", []] } }, 0] },
+  };
+
   const [totalUsers, rows] = await Promise.all([
-    User.countDocuments({
-      isDeleted: false,
-      $expr: { $gt: [{ $size: { $ifNull: ["$refreshTokens", []] } }, 0] },
-    }),
-    User.find({
-      $expr: { $gt: [{ $size: { $ifNull: ["$refreshTokens", []] } }, 0] },
-    })
+    User.countDocuments(activeSessionsFilter).maxTimeMS(10_000),
+    User.find(activeSessionsFilter)
       .select("name email phone refreshTokens")
       .skip(skip)
       .limit(size)
+      .maxTimeMS(10_000)
       .lean(),
   ]);
 
@@ -435,12 +438,11 @@ export const listActiveSessions = asyncHandler(async (req, res) => {
       });
     }
   }
-  // Ugly but fine for admin scale; sort newest last active first.
   sessions.sort((a, b) => new Date(b.lastUsedAt) - new Date(a.lastUsedAt));
 
   res.status(200).json({
     success: true,
-    data: { sessions, total, page: Math.max(1, parseInt(page, 10)), limit: size },
+    data: { sessions, total: totalUsers, page: Math.max(1, parseInt(page, 10)), limit: size },
   });
 });
 
@@ -633,23 +635,23 @@ export const statsOverview = asyncHandler(async (_req, res) => {
     usersToday, usersYesterday, todosToday, todosYesterday,
     loginYesterday, failedYesterday, activeSessions,
   ] = await Promise.all([
-    User.countDocuments(),
-    User.countDocuments({ isEmailVerified: true }),
-    User.countDocuments({ isEmailVerified: false }),
-    User.countDocuments({ role: "admin" }),
-    User.countDocuments({ lockUntil: { $gt: new Date() } }),
-    User.countDocuments({ isDeleted: true }),
-    Todo.countDocuments({ isDeleted: false }),
-    Otp.countDocuments({ createdAt: { $gte: today } }),
-    LoginHistory.countDocuments({ createdAt: { $gte: today } }),
-    LoginHistory.countDocuments({ createdAt: { $gte: today }, status: { $in: FAILED_STATUSES } }),
-    User.countDocuments({ createdAt: { $gte: today, $lt: tomorrow } }),
-    User.countDocuments({ createdAt: { $gte: yesterday, $lt: today } }),
-    Todo.countDocuments({ createdAt: { $gte: today, $lt: tomorrow }, isDeleted: false }),
-    Todo.countDocuments({ createdAt: { $gte: yesterday, $lt: today }, isDeleted: false }),
-    LoginHistory.countDocuments({ createdAt: { $gte: yesterday, $lt: today } }),
-    LoginHistory.countDocuments({ createdAt: { $gte: yesterday, $lt: today }, status: { $in: FAILED_STATUSES } }),
-    User.countDocuments(activeSessionsFilter),
+    User.countDocuments().maxTimeMS(10_000),
+    User.countDocuments({ isEmailVerified: true }).maxTimeMS(10_000),
+    User.countDocuments({ isEmailVerified: false }).maxTimeMS(10_000),
+    User.countDocuments({ role: "admin" }).maxTimeMS(10_000),
+    User.countDocuments({ lockUntil: { $gt: new Date() } }).maxTimeMS(10_000),
+    User.countDocuments({ isDeleted: true }).maxTimeMS(10_000),
+    Todo.countDocuments({ isDeleted: false }).maxTimeMS(10_000),
+    Otp.countDocuments({ createdAt: { $gte: today } }).maxTimeMS(10_000),
+    LoginHistory.countDocuments({ createdAt: { $gte: today } }).maxTimeMS(10_000),
+    LoginHistory.countDocuments({ createdAt: { $gte: today }, status: { $in: FAILED_STATUSES } }).maxTimeMS(10_000),
+    User.countDocuments({ createdAt: { $gte: today, $lt: tomorrow } }).maxTimeMS(10_000),
+    User.countDocuments({ createdAt: { $gte: yesterday, $lt: today } }).maxTimeMS(10_000),
+    Todo.countDocuments({ createdAt: { $gte: today, $lt: tomorrow }, isDeleted: false }).maxTimeMS(10_000),
+    Todo.countDocuments({ createdAt: { $gte: yesterday, $lt: today }, isDeleted: false }).maxTimeMS(10_000),
+    LoginHistory.countDocuments({ createdAt: { $gte: yesterday, $lt: today } }).maxTimeMS(10_000),
+    LoginHistory.countDocuments({ createdAt: { $gte: yesterday, $lt: today }, status: { $in: FAILED_STATUSES } }).maxTimeMS(10_000),
+    User.countDocuments(activeSessionsFilter).maxTimeMS(10_000),
   ]);
 
   const trend = (todayVal, yesterdayVal) => {

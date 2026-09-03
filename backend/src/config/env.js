@@ -1,42 +1,8 @@
-/**
- * Centralized environment configuration.
- *
- * Every module imports its settings from here instead of calling
- * process.env directly. This gives us one place to:
- *   - document every variable the app expects
- *   - validate required secrets (fail fast in production)
- *   - provide safe development fallbacks
- */
 import dotenv from "dotenv";
-import crypto from "crypto";
 
-// Load variables from backend/.env into process.env (once).
 dotenv.config();
 
 const isProd = process.env.NODE_ENV === "production";
-
-/**
- * Read a required variable. In production a missing secret crashes the app
- * on boot (fail fast). In development we fall back to an ephemeral random
- * value so the server can still start, with a loud warning.
- */
-function requireSecret(key) {
-  const value = process.env[key];
-  if (value) return value;
-
-  if (isProd) {
-    throw new Error(
-      `[config] Missing required environment variable "${key}". Set it in .env before running in production.`
-    );
-  }
-
-  const devValue = crypto.randomBytes(32).toString("hex");
-  console.warn(
-    `[config] WARNING: "${key}" is not set. Using an ephemeral dev value — ` +
-      `tokens/sessions will be invalidated on restart. Add it to backend/.env for stable local dev.`
-  );
-  return devValue;
-}
 
 export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
@@ -45,39 +11,25 @@ export const env = {
 
   port: parseInt(process.env.PORT || "5050", 10),
 
-  // MongoDB connection string.
-  mongoUri:
-    process.env.MONGO_URI ||
-    process.env.MONGO_URL,
+  mongoUri: process.env.MONGO_URI || process.env.MONGO_URL,
 
-  // Frontend origin allowed by CORS.
   clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
 
   jwt: {
-    accessSecret: requireSecret("JWT_ACCESS_SECRET"),
+    accessSecret: process.env.JWT_ACCESS_SECRET || "dev-access-secret",
     accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || "15m",
-    refreshSecret: requireSecret("JWT_REFRESH_SECRET"),
-    // Standard session = 7 days; "Remember me" extends the cookie to 30.
+    refreshSecret: process.env.JWT_REFRESH_SECRET || "dev-refresh-secret",
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d",
     refreshRememberExpiresIn: process.env.JWT_REFRESH_REMEMBER_EXPIRES_IN || "30d",
-    // Short-lived proof that a password check passed while 2FA is pending.
     twoFactorExpiresIn: process.env.TWO_FACTOR_PENDING_TTL || "10m",
-    // Refresh TTL in ms — used for cookie Max-Age.
     refreshTtlMs: parseDurationMs(process.env.JWT_REFRESH_EXPIRES_IN || "7d"),
-    refreshRememberTtlMs: parseDurationMs(
-      process.env.JWT_REFRESH_REMEMBER_EXPIRES_IN || "30d"
-    ),
+    refreshRememberTtlMs: parseDurationMs(process.env.JWT_REFRESH_REMEMBER_EXPIRES_IN || "30d"),
   },
 
   cookies: {
     refreshTokenName: process.env.REFRESH_TOKEN_COOKIE_NAME || "refreshToken",
     csrfTokenName: process.env.CSRF_COOKIE_NAME || "csrfToken",
-    // Readable (non-httpOnly) companion to the refresh cookie. Lets the SPA
-    // know a refresh session exists so it never fires a doomed refresh call
-    // that would surface a 401 in the console for logged-out visitors.
     sessionMarkerName: process.env.SESSION_MARKER_COOKIE_NAME || "appSession",
-    // "lax" fits same-site deployments (localhost dev included);
-    // switch to "none" (+ HTTPS) only if API and client live on different sites.
     sameSite: process.env.COOKIE_SAMESITE || "lax",
   },
 
@@ -87,7 +39,6 @@ export const env = {
     resendCooldownSeconds: parseInt(process.env.OTP_RESEND_COOLDOWN_SECONDS || "60", 10),
   },
 
-  /** Account lockout after repeated failed logins (brute-force defense). */
   lockout: {
     maxFailedAttempts: parseInt(process.env.MAX_FAILED_LOGIN_ATTEMPTS || "5", 10),
     lockMinutes: parseInt(process.env.LOCK_TIME_MINUTES || "60", 10),
@@ -101,16 +52,11 @@ export const env = {
     from: process.env.MAIL_FROM || "Secure Todo <no-reply@todoapp.local>",
   },
 
-  /**
-   * Google reCAPTCHA (optional v3). When RECAPTCHA_SECRET_KEY is set,
-   * register/login REQUIRE a valid captchaToken from the frontend.
-   */
   recaptcha: {
     secretKey: process.env.RECAPTCHA_SECRET_KEY || "",
     minScore: parseFloat(process.env.RECAPTCHA_MIN_SCORE || "0.5"),
   },
 
-  /** HTTP rate-limit budgets. Defaults match the documented policy. */
   rateLimits: {
     registerMax: process.env.REGISTER_RATE_LIMIT_MAX || "5",
     registerWindowMinutes: process.env.REGISTER_RATE_LIMIT_WINDOW_MINUTES || "60",
@@ -123,11 +69,9 @@ export const env = {
   },
 };
 
-/** Parse values like "7d", "15m", "3600s" or plain seconds into milliseconds. */
 function parseDurationMs(value) {
   const match = /^(\d+)\s*(s|m|h|d)?$/i.exec(String(value).trim());
-  if (!match) return 7 * 24 * 60 * 60 * 1000; // default: 7 days
-
+  if (!match) return 7 * 24 * 60 * 60 * 1000;
   const amount = parseInt(match[1], 10);
   const unit = (match[2] || "s").toLowerCase();
   const multipliers = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
