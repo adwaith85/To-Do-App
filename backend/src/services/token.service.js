@@ -76,6 +76,33 @@ export function clearRefreshCookie(res) {
   res.clearCookie(env.cookies.sessionMarkerName, sessionMarkerOptions());
 }
 
+/* ------------------------------------------------------------------ */
+/* Remember-me cookie helpers                                          */
+/* ------------------------------------------------------------------ */
+
+/** 7-day remember-me cookie — survives logout, enables auto-login. */
+export function rememberMeCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: env.isProd,
+    sameSite: env.cookies.sameSite,
+    path: "/api/auth",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  };
+}
+
+export function setRememberMeCookie(res, rawToken) {
+  res.cookie(env.cookies.rememberMeName, rawToken, rememberMeCookieOptions());
+}
+
+export function clearRememberMeCookie(res) {
+  res.clearCookie(env.cookies.rememberMeName, rememberMeCookieOptions());
+}
+
+export function getRememberMeFromRequest(req) {
+  return req.cookies?.[env.cookies.rememberMeName] || null;
+}
+
 /** Read the raw refresh token from the incoming request cookie jar. */
 export function getRefreshTokenFromRequest(req) {
   return req.cookies?.[env.cookies.refreshTokenName] || null;
@@ -106,6 +133,13 @@ export async function issueSession(user, req, res, { rememberMe = false, role } 
     rememberMe,
   });
   setRefreshCookie(res, refreshToken, { rememberMe });
+
+  // Remember-me: create a persistent token that survives logout
+  if (rememberMe) {
+    const rememberToken = signRefreshToken(user, { rememberMe: true, role });
+    await user.setRememberMe(hashToken(rememberToken));
+    setRememberMeCookie(res, rememberToken);
+  }
 
   return accessToken;
 }
@@ -230,6 +264,9 @@ export async function revokeCurrentSession(req, res) {
     InvalidatedToken.invalidateMany(userId, [deadHash], naturalExpiry, "logout"),
   ]);
 
+  // NOTE: We do NOT clear remember-me cookie here — it persists for 7 days
+  // regardless of logout, enabling auto-login on next visit.
+
   return userId ?? null;
 }
 
@@ -292,10 +329,71 @@ export async function revokeAllSessions(userId) {
     await blacklistWithUpperBound(userId, hashes, "logout_all");
   }
   await User.revokeAllRefreshTokens(userId);
+  // Also clear the remember-me session on full logout
+  await user.clearRememberMe();
 }
 
 /** Blacklist helper stamping rows with a generous TTL-safe expiry. */
 function blacklistWithUpperBound(userId, hashes, reason) {
   const upperBoundExpiry = new Date(Date.now() + env.jwt.refreshTtlMs);
   return InvalidatedToken.invalidateMany(userId, hashes, upperBoundExpiry, reason);
+}
+
+/* ------------------------------------------------------------------ */
+/* Auto-login from remember-me                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Verify the remember-me cookie and issue a fresh session.
+ * Called on app load to restore login without credentials.
+ * @returns {{accessToken: string, user: object, role: string} | null}
+ */
+export async function autoLoginFromRememberMe(req, res) {
+  const rawToken = getRememberMeFromRequest(req);
+  if (!rawToken) return null;
+
+  let payload;
+  try {
+    payload = verifyRefreshToken(rawToken);
+  } catch {
+    clearRememberMeCookie(res);
+    return null; // expired or invalid
+  }
+
+  const tokenHash = hashToken(rawToken);
+  const user = await User.findById(payload.sub).select("+refreshTokens");
+  if (!user || user.isDeleted) {
+    clearRememberMeCookie(res);
+    return null;
+  }
+
+  // Verify the hash matches what's stored in the user's rememberMeSession
+  if (
+    !user.rememberMeSession ||
+    user.rememberMeSession.tokenHash !== tokenHash ||
+    (user.rememberMeSession.expiresAt && user.rememberMeSession.expiresAt < new Date())
+  ) {
+    clearRememberMeCookie(res);
+    return null;
+  }
+
+  // Token is valid — rotate it (refresh the expiry) and issue a new session
+  const role = payload.role || user.role || "user";
+  const newRememberToken = signRefreshToken(user, { rememberMe: true, role });
+  await user.setRememberMe(hashToken(newRememberToken));
+  setRememberMeCookie(res, newRememberToken);
+
+  // Also create a regular session (access + refresh pair)
+  const accessToken = signAccessToken(user, role);
+  const refreshToken = signRefreshToken(user, { rememberMe: true, role });
+
+  await user.addSession({
+    tokenHash: hashToken(refreshToken),
+    ip: getClientIp(req),
+    device: getDevice(req),
+    rememberMe: true,
+  });
+  setRefreshCookie(res, refreshToken, { rememberMe: true });
+
+  return { accessToken, user, role };
 }

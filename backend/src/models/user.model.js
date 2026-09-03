@@ -134,6 +134,16 @@ const userSchema = new mongoose.Schema(
     deactivatedAt: { type: Date, default: null },
 
     /**
+     * Persistent "remember me" session — a single long-lived token hash
+     * that survives logout. When present, the auto-login endpoint can
+     * restore a session without credentials. Cleared on password reset.
+     */
+    rememberMeSession: {
+      tokenHash: { type: String, default: null },
+      expiresAt: { type: Date, default: null },
+    },
+
+    /**
      * Active sessions — one entry per logged-in DEVICE.
      * Only the SHA-256 HASH of each refresh token is kept, plus just enough
      * context to power the "Devices & sessions" management screen:
@@ -256,6 +266,28 @@ userSchema.statics.rotateRefreshTokenHash = function (userId, oldHash, newHash) 
 /** Revoke every session (all devices) — theft response / logout-all. */
 userSchema.statics.revokeAllRefreshTokens = function (userId) {
   return this.updateOne({ _id: userId }, { $set: { refreshTokens: [] } });
+};
+
+/* ------------------------------------------------------------------ */
+/* Remember-me session helpers                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Set a persistent remember-me token hash. This survives logout and
+ * allows auto-login for 7 days.
+ */
+userSchema.methods.setRememberMe = function (tokenHash) {
+  this.rememberMeSession = {
+    tokenHash,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+  };
+  return this.save();
+};
+
+/** Clear the persistent remember-me session. */
+userSchema.methods.clearRememberMe = function () {
+  this.rememberMeSession = { tokenHash: null, expiresAt: null };
+  return this.save();
 };
 
 /* ------------------------------------------------------------------ */

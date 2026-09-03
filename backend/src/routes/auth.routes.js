@@ -27,6 +27,7 @@ import {
   login,
   verifyLoginOtp,
   refreshAccessToken,
+  autoLogin,
   logout,
   logoutAll,
   getMe,
@@ -76,6 +77,7 @@ router.post("/reset-password",     passwordResetLimiter, sanitize, validate({ bo
 
 /* Public — session lifecycle. Cookie-authenticated → CSRF-protected. */
 router.post("/refresh-token", requireCsrf, refreshAccessToken);
+router.post("/auto-login",   autoLogin); // no CSRF needed — read-only cookie check
 router.post("/logout",        requireCsrf, logout); // idempotent; blacklists token
 
 /* Protected — requires a valid Bearer access token. */

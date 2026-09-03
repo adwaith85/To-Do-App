@@ -5,20 +5,18 @@
  * axios client module; this component orchestrates the auth endpoints and
  * shares helpers through context (see useAuth.js).
  *
- * Session restore: because the access token is memory-only, a full page
- * reload silently calls /refresh-token (cookie) to rebuild the session —
- * standard pattern for short-lived access tokens.
+ * Session restore:
+ *  1. Try refresh token (httpOnly cookie) → standard silent refresh
+ *  2. If no refresh session, try auto-login (remember-me cookie)
+ *  3. If neither works → stay logged out
  */
 import { useEffect, useState, useCallback } from "react";
 import client, { setAccessToken, refreshSession, hasRefreshSession } from "../api/client";
 import { AuthContext } from "./authContext";
-import { clearRemembered } from "../utils/rememberMe";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true); // true until first refresh check
-  // The SESSION role (from the access token / refresh), independent of the
-  // DB `user.role`: an admin who signed in via captcha gets "user" here.
   const [role, setRole] = useState(null);
 
   /** Apply a session payload ({ user, accessToken, role? }) from any endpoint. */
@@ -32,13 +30,22 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     (async () => {
       try {
-        // No readable marker → no refresh cookie → skip the doomed call.
+        // Step 1: Try refresh token (standard session restore)
         if (hasRefreshSession()) {
           const { data } = await refreshSession();
           applySession(data.data);
+          return;
         }
+
+        // Step 2: No refresh session → try auto-login from remember-me cookie
+        const { data } = await client.post("/api/auth/auto-login");
+        if (data.data) {
+          applySession(data.data);
+          return;
+        }
+        // No remember-me either → stay logged out
       } catch {
-        /* no valid refresh session → stay logged out */
+        /* no valid session → stay logged out */
       } finally {
         setBooting(false);
       }
@@ -58,76 +65,61 @@ export function AuthProvider({ children }) {
 
   /* ---- Actions ---- */
 
-  /**
-   * POST /login → stores tokens OR returns the 2FA hand-off:
-   *   { twoFactorRequired: true, pendingToken } when enabled for the user.
-   * Errors are rethrown so the page can render field messages.
-   */
   const login = async (payload) => {
     const { data } = await client.post("/api/auth/login", payload);
-    if (data.data?.twoFactorRequired) return data; // wait for verifyLoginOtp
+    if (data.data?.twoFactorRequired) return data;
     applySession(data.data);
     return data;
   };
 
-  /** POST /verify-login-otp → completes a 2FA login and stores the session. */
   const verifyLoginOtp = async (payload) => {
     const { data } = await client.post("/api/auth/verify-login-otp", payload);
     applySession(data.data);
     return data;
   };
 
-  /** POST /register → step 1 of signup (name/email/phone, NO password). */
   const register = async (payload) => {
     const { data } = await client.post("/api/auth/register", payload);
     return data;
   };
 
-  /** POST /set-password → final signup step (email verified before this). */
   const setPassword = async (payload) => {
     const { data } = await client.post("/api/auth/set-password", payload);
     return data;
   };
 
-  /** POST /verify-otp → on success the backend logs the user in. */
   const verifyOtp = async (payload) => {
     const { data } = await client.post("/api/auth/verify-otp", payload);
     if (data.data?.accessToken) applySession(data.data);
     return data;
   };
 
-  /** POST /resend-otp */
   const resendOtp = async (payload) => {
     const { data } = await client.post("/api/auth/resend-otp", payload);
     return data;
   };
 
-  /** POST /forgot-password — always generic (never reveals accounts). */
   const forgotPassword = async (payload) => {
     const { data } = await client.post("/api/auth/forgot-password", payload);
     return data;
   };
 
-  /** POST /reset-password — consumes the code; all sessions die. */
   const resetPassword = async (payload) => {
     const { data } = await client.post("/api/auth/reset-password", payload);
     return data;
   };
 
-  /** PATCH /2fa — flip the per-user second factor. Returns updated user. */
   const toggleTwoFactor = async (enabled) => {
     const { data } = await client.patch("/api/auth/2fa", { enabled });
     if (data.data?.user) setUser(data.data.user);
     return data;
   };
 
-  /** POST /logout → clear local state regardless of server result.
-   * Also forgets any remember-me credentials stored on this device. */
+  /** Logout: clear local state. Remember-me cookie is preserved server-side. */
   const logout = async () => {
     try {
       await client.post("/api/auth/logout");
     } finally {
-      clearRemembered();
       setAccessToken(null);
       setUser(null);
       setRole(null);

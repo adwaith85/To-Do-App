@@ -28,6 +28,7 @@ export const env = {
 
   cookies: {
     refreshTokenName: process.env.REFRESH_TOKEN_COOKIE_NAME || "refreshToken",
+    rememberMeName: process.env.REMEMBER_ME_COOKIE_NAME || "rememberMe",
     csrfTokenName: process.env.CSRF_COOKIE_NAME || "csrfToken",
     sessionMarkerName: process.env.SESSION_MARKER_COOKIE_NAME || "appSession",
     sameSite: process.env.COOKIE_SAMESITE || "lax",
