@@ -66,6 +66,15 @@ export default function Todos() {
     }
   };
 
+  const toggleTodoItem = async (id, description) => {
+    try {
+      const { data } = await client.patch(`/api/todos/${id}`, { description });
+      setTodos((prev) => prev?.map((t) => (t._id === id ? data.data : t)));
+    } catch {
+      toast.error("Could not update the list item");
+    }
+  };
+
   const onComposed = useCallback((todo, isUpdate) => {
     setTodos((prev) => {
       if (!prev) return prev;
@@ -162,6 +171,7 @@ export default function Todos() {
                 key={todo._id}
                 todo={todo}
                 onToggle={toggleTodo}
+                onToggleItem={toggleTodoItem}
                 onDelete={deleteTodo}
                 onArchive={archiveTodo}
                 onPin={pinTodo}
@@ -176,6 +186,7 @@ export default function Todos() {
                 key={todo._id}
                 todo={todo}
                 onToggle={toggleTodo}
+                onToggleItem={toggleTodoItem}
                 onDelete={deleteTodo}
                 onArchive={archiveTodo}
                 onPin={pinTodo}

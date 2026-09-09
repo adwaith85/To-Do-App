@@ -131,9 +131,12 @@ The backend reads everything from `backend/.env`. Highlights:
   list items — a single `Enter` moves to the next item, and pressing `Enter` a
   second time on an empty item **keeps the list typed so far** and drops back to
   a normal continuing paragraph. List items are stored in the description with a
-  `• ` line prefix (saved to the database), so the **diamonds persist** — they
-  stay visible in paragraph mode, on the todo cards, in the editor, and in
-  reminder emails.
+  `[ ] ` / `[x] ` line prefix (legacy `• ` lines still work) — saved to the
+  database, so the **list marking persists** and the exact typed order is kept:
+  paragraphs and lists render **in the order you typed them**, never regrouped.
+  Every list item is a **marking box** (checkbox) on the cards and in the editor —
+  clicking it ticks that single item (tick + line-through) **without changing the
+  card's opacity**; only completing the whole task fades the card.
 - **8 themes + None** (`ThemePicker`): None (no theme), Light (solid white card),
   Dark, Love, Simple, Forest, Ocean, Sunset, Violet — picked as a colored card
   background from the options menu. Every themed surface (cards, compose box,

@@ -2,6 +2,10 @@ import mongoose from "mongoose";
 import { env } from "./env.js";
 
 export async function connectDB() {
+  if (!env.mongoUri) {
+    throw new Error("MONGO_URI is missing from .env");
+  }
+
   if (mongoose.connection.readyState === 1) {
     console.log("[db] Already connected");
     return;
@@ -18,6 +22,12 @@ export async function connectDB() {
     );
   } catch (error) {
     console.error("[db] Connection failed:", error.message);
+
+    // Make sure failed connection doesn't remain around
+    try {
+      await mongoose.disconnect();
+    } catch {}
+
     throw error;
   }
 }

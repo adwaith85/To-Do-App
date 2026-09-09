@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
-import { isListLine, toListLine, fromListLine } from "../utils/description";
+import { isListLine, toListLine, fromListLine, isCheckedLine } from "../utils/description";
 
 /**
  * Description editor with two modes:
- *  - paragraph : renders any persisted list as diamond bullets (read-only) plus
+ *  - paragraph : renders any persisted list as checkbox rows (togglable) plus
  *    an editable textarea for the continuing paragraph text.
- *  - list      : diamond bullet items; Enter adds the next item, Enter on an
- *    empty item finishes the list and continues as a paragraph below it.
+ *  - list      : checkbox items; Enter adds the next item, Enter on an empty
+ *    item finishes the list and continues as a paragraph below it.
  *
- * List items are persisted in the description string with the `• ` line prefix
- * (see RichDescription), so the diamonds survive returning to paragraph mode,
- * are saved to the database, and are re-rendered on the todo cards.
+ * List items are persisted in the description string with the `[ ] ` / `[x] `
+ * line prefixes (see RichDescription), so the marking survives returning to
+ * paragraph mode, is saved to the database, and is re-rendered on the cards.
+ * Legacy `• ` prefixed lines keep working and are treated as unchecked.
  */
 const ListEditor = forwardRef(function ListEditor(
   { value = "", onChange, placeholder = "Add a note...", light = false },
@@ -21,8 +22,9 @@ const ListEditor = forwardRef(function ListEditor(
   const itemRefs = useRef([]);
 
   const lines = value.split("\n");
-  const itemLines = lines.filter(isListLine);
-  const items = itemLines.map(fromListLine);
+  const items = lines
+    .filter(isListLine)
+    .map((l) => ({ text: fromListLine(l), checked: isCheckedLine(l) }));
   const prefixText = lines.filter((l) => !isListLine(l)).join("\n").trim();
 
   const focusParagraphAtEnd = () => {
@@ -67,32 +69,39 @@ const ListEditor = forwardRef(function ListEditor(
 
   // Rewrites only the list-item lines, preserving any surrounding paragraph text.
   const rebuild = (nextItems) => {
-    const out = lines.map((l) => (isListLine(l) ? toListLine(nextItems.shift() ?? "") : l));
-    if (nextItems.length) out.push(...nextItems.map(toListLine));
+    const queue = nextItems.map((it) => toListLine(it.text, it.checked));
+    const out = lines.map((l) => (isListLine(l) ? queue.shift() ?? "" : l));
+    if (queue.length) out.push(...queue);
     onChange(out.join("\n"));
   };
 
   const onItemChange = (idx, text) => {
-    const next = [...items];
-    next[idx] = text;
+    const next = items.map((it) => ({ ...it }));
+    next[idx].text = text;
+    rebuild(next);
+  };
+
+  const onToggleItem = (idx) => {
+    const next = items.map((it) => ({ ...it }));
+    next[idx].checked = !next[idx].checked;
     rebuild(next);
   };
 
   const onItemKeyDown = (e, idx) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      const currentIsEmpty = (items[idx] || "").trim() === "";
+      const currentIsEmpty = (items[idx]?.text || "").trim() === "";
       if (currentIsEmpty) {
         finishList();
         return;
       }
-      const next = [...items];
-      next.splice(idx + 1, 0, "");
+      const next = items.map((it) => ({ ...it }));
+      next.splice(idx + 1, 0, { text: "", checked: false });
       rebuild(next);
       requestAnimationFrame(() => itemRefs.current[idx + 1]?.focus());
-    } else if (e.key === "Backspace" && (items[idx] || "").length === 0 && items.length > 1) {
+    } else if (e.key === "Backspace" && (items[idx]?.text || "").length === 0 && items.length > 1) {
       e.preventDefault();
-      const next = [...items];
+      const next = items.map((it) => ({ ...it }));
       next.splice(idx, 1);
       rebuild(next);
       requestAnimationFrame(() => itemRefs.current[Math.max(0, idx - 1)]?.focus());
@@ -116,8 +125,25 @@ const ListEditor = forwardRef(function ListEditor(
   };
   useEffect(() => { autoGrow(); }, [paraValue, value, mode]);
 
-  const bullet = (dim) =>
-    `mt-[6px] inline-block h-1.5 w-1.5 shrink-0 rotate-45 rounded-[1.5px] ${dim ? "bg-brand-400/40" : light ? "bg-brand-500" : "bg-brand-400/80"}`;
+  const boxCls = (checked) =>
+    `mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-colors ${
+      checked
+        ? "border-emerald-400 bg-emerald-500 text-white"
+        : light
+          ? "border-slate-400 text-slate-500 hover:border-brand-400 hover:text-brand-600"
+          : "border-slate-400/80 text-slate-300 hover:border-brand-400 hover:text-brand-300"
+    }`;
+
+  const boxContent = (
+    <svg viewBox="0 0 12 12" fill="none" className="h-2.5 w-2.5" aria-hidden>
+      <path d="M2 6.2 4.6 8.8 10 3.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+
+  const rowCls = (checked) =>
+    `min-w-0 flex-1 break-words text-xs ${checked ? "line-through" : ""} ${
+      light ? "text-slate-700" : "text-slate-300"
+    }`;
 
   // ─── Paragraph mode ───
   if (mode !== "list") {
@@ -127,8 +153,15 @@ const ListEditor = forwardRef(function ListEditor(
           <ul className="mb-2 space-y-1">
             {items.map((item, i) => (
               <li key={i} className="flex items-start gap-2">
-                <span className={bullet(false)} aria-hidden />
-                <span className={`min-w-0 flex-1 break-words ${light ? "text-slate-700" : "text-slate-300"}`}>{item}</span>
+                <button
+                  type="button"
+                  aria-label={item.checked ? "Mark list item not done" : "Mark list item done"}
+                  onClick={() => onToggleItem(i)}
+                  className={boxCls(item.checked)}
+                >
+                  {item.checked && boxContent}
+                </button>
+                <span className={rowCls(item.checked)}>{item.text}</span>
               </li>
             ))}
           </ul>
@@ -171,13 +204,20 @@ const ListEditor = forwardRef(function ListEditor(
       <div className="space-y-0.5">
         {items.map((item, idx) => (
           <div key={idx} className="flex items-start gap-2">
-            <span className={bullet(false)} aria-hidden />
+            <button
+              type="button"
+              aria-label={item.checked ? "Mark list item not done" : "Mark list item done"}
+              onClick={() => onToggleItem(idx)}
+              className={boxCls(item.checked)}
+            >
+              {item.checked && boxContent}
+            </button>
             <input
               ref={(el) => (itemRefs.current[idx] = el)}
-              value={item}
+              value={item.text}
               onChange={(e) => onItemChange(idx, e.target.value)}
               onKeyDown={(e) => onItemKeyDown(e, idx)}
-              placeholder={item === "" ? "List item..." : ""}
+              placeholder={item.text === "" ? "List item..." : ""}
               className={`w-full bg-transparent text-xs outline-none ${light ? "text-slate-700 placeholder:text-slate-400" : "text-slate-300 placeholder:text-slate-600"}`}
             />
           </div>
