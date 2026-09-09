@@ -35,7 +35,19 @@ async function sendReminderEmail(user, todo) {
           <div style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#10b981);border-radius:12px;padding:12px 20px;color:#0f172a;font-weight:800;font-size:18px;">Todo Reminder</div>
         </div>
         <h2 style="font-size:16px;font-weight:600;margin:0 0 16px;color:#f1f5f9;">${todo.task}</h2>
-        ${todo.description ? `<p style="font-size:14px;color:#94a3b8;margin:0 0 16px;line-height:1.6;">${todo.description}</p>` : ""}
+        ${
+          todo.description
+            ? `<div style="margin:0 0 16px;">${todo.description
+                .split("\n")
+                .filter((l) => l.trim())
+                .map((l) =>
+                  l.startsWith("• ")
+                    ? `<span style="display:block;font-size:14px;color:#94a3b8;line-height:1.6;padding-left:14px;position:relative;"><span style="position:absolute;left:0;top:8px;width:5px;height:5px;background:#a78bfa;transform:rotate(45deg);"></span>${l.replace(/^\u2022\s*/, "")}</span>`
+                    : `<p style="font-size:14px;color:#94a3b8;margin:0 0 8px;line-height:1.6;">${l}</p>`
+                )
+                .join("")}</div>`
+            : ""
+        }
         <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:16px;margin:16px 0;">
           <p style="font-size:12px;color:#64748b;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.05em;">Reminder scheduled for</p>
           <p style="font-size:14px;font-weight:600;color:#06b6d4;margin:0;">${new Date(todo.reminderAt).toLocaleString()}</p>

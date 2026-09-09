@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import client from "../api/client";
 import Spinner from "../components/Spinner";
 import { isWhiteTheme } from "../utils/theme";
+import RichDescription from "../components/RichDescription";
 
 function fmtDateTime(iso) {
   if (!iso) return "";
@@ -45,6 +46,15 @@ export default function Archives() {
 
   if (todos === null) return <Spinner label="Loading archives..." />;
 
+  // Count-based columns: 1 = full width, 2 = two columns, 3+ = three columns.
+  // The partial final row keeps the same width as full rows.
+  const count = todos.length;
+  const gridClass = count === 1
+    ? "grid-cols-1"
+    : count === 2
+      ? "grid-cols-1 sm:grid-cols-2"
+      : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
+
   return (
     <div className="min-h-screen">
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 animate-fade-in">
@@ -66,7 +76,7 @@ export default function Archives() {
             <p className="italic text-slate-500">Nothing archived yet. Archive a task to keep it out of sight.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className={`grid items-start gap-3 ${gridClass}`}>
             {todos.map((todo) => {
               const isCompleted = todo.status === "completed";
               const light = isWhiteTheme(todo.backgroundColor);
@@ -92,8 +102,13 @@ export default function Archives() {
                       <span className={`block break-words text-sm font-semibold ${isCompleted ? "text-slate-400 line-through" : light ? "text-slate-900" : "text-slate-100"}`}>
                         {todo.task}
                       </span>
-                      {todo.description && (
-                        <p className={`mt-1 line-clamp-2 whitespace-pre-line text-xs leading-relaxed ${light ? "text-slate-500" : "text-slate-400"}`}>{todo.description}</p>
+{todo.description && (
+                        <RichDescription
+                          description={todo.description}
+                          light={light}
+                          textClass={light ? "text-slate-500" : "text-slate-400"}
+                          className="mt-1 max-h-40 overflow-y-auto pr-1 text-xs leading-relaxed [scrollbar-width:thin]"
+                        />
                       )}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
                         {todo.isPinned && (

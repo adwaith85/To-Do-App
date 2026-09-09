@@ -104,6 +104,17 @@ export default function Todos() {
     return 0;
   });
 
+  // Horizontal grid columns follow the card count: 1 card = full width,
+  // 2 cards = two equal columns, 3+ cards = three equal columns
+  // (the final partial row keeps the same width as the others).
+  const count = sorted.length;
+  const gridClass =
+    count === 1
+      ? "grid-cols-1"
+      : count === 2
+        ? "grid-cols-2"
+        : "grid-cols-2 lg:grid-cols-3";
+
   return (
     <div className="min-h-screen">
       <div className={`mx-auto w-full px-4 py-6 sm:px-6 animate-fade-in ${layout === "horizontal" ? "max-w-6xl" : "max-w-3xl"}`}>
@@ -145,7 +156,7 @@ export default function Todos() {
             <p className="mt-1 text-xs text-slate-600">Click above to create one</p>
           </div>
         ) : layout === "horizontal" ? (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <div className={`grid items-start gap-3 ${gridClass}`}>
             {sorted.map((todo) => (
               <TodoCard
                 key={todo._id}

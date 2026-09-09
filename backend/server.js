@@ -4,45 +4,56 @@ import { env } from "./src/config/env.js";
 import { startReminderCron } from "./src/utils/reminder.util.js";
 
 async function bootstrap() {
-  await connectDB();
-  startReminderCron();
+  try {
+    // Connect to MongoDB first
+    await connectDB();
 
-  const app = createApp();
+    // Start reminder scheduler after DB is ready
+    startReminderCron();
 
-  const server = app.listen(env.port, () => {
-    console.log(
-      `[server] API listening on http://localhost:${env.port} (${env.nodeEnv})`
-    );
-  });
+    // Create Express application
+    const app = createApp();
 
-  let isShuttingDown = false;
+    // Start HTTP server
+    const server = app.listen(env.port, () => {
+      console.log(
+        `[server] API listening on http://localhost:${env.port} (${env.nodeEnv})`
+      );
+    });
 
-  const shutdown = async (signal) => {
-    if (isShuttingDown) return;
+    let isShuttingDown = false;
 
-    isShuttingDown = true;
-    console.log(`\n[server] ${signal} received — shutting down...`);
+    const shutdown = async (signal) => {
+      if (isShuttingDown) return;
 
-    try {
-      await new Promise((resolve, reject) => {
-        server.close((error) => {
-          if (error) return reject(error);
-          resolve();
-        });
+      isShuttingDown = true;
+
+      console.log(`\n[server] ${signal} received — shutting down...`);
+
+      server.close(async (error) => {
+        if (error) {
+          console.error("[server] Error closing HTTP server:", error);
+        }
+
+        try {
+          await disconnectDB();
+          console.log("[server] Shutdown complete");
+          process.exit(0);
+        } catch (dbError) {
+          console.error("[server] Shutdown error:", dbError);
+          process.exit(1);
+        }
       });
+    };
 
-      await disconnectDB();
-      console.log("[server] Shutdown complete");
-    } catch (error) {
-      console.error("[server] Shutdown error:", error);
-    }
-  };
+    process.once("SIGINT", () => shutdown("SIGINT"));
+    process.once("SIGTERM", () => shutdown("SIGTERM"));
+  } catch (error) {
+    console.error("[server] Failed to start:");
+    console.error(error.message);
 
-  process.once("SIGINT", () => shutdown("SIGINT"));
-  process.once("SIGTERM", () => shutdown("SIGTERM"));
+    process.exit(1);
+  }
 }
 
-bootstrap().catch((error) => {
-  console.error("[server] Fatal startup error:");
-  console.error(error);
-});
+bootstrap();

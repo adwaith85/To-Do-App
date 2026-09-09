@@ -8,8 +8,14 @@ export async function connectDB() {
   }
 
   try {
-    await mongoose.connect(env.mongoUri);
-    console.log(`[db] Connected → ${mongoose.connection.host}/${mongoose.connection.name}`);
+    await mongoose.connect(env.mongoUri, {
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+    });
+
+    console.log(
+      `[db] Connected → ${mongoose.connection.host}/${mongoose.connection.name}`
+    );
   } catch (error) {
     console.error("[db] Connection failed:", error.message);
     throw error;
@@ -23,14 +29,14 @@ export async function disconnectDB() {
   }
 }
 
-mongoose.connection.on("error", (err) => {
-  console.error("[db] Runtime error:", err.message);
+mongoose.connection.on("error", (error) => {
+  console.error("[db] Runtime error:", error.message);
 });
 
 mongoose.connection.on("disconnected", () => {
-  console.warn("[db] Disconnected — will attempt to reconnect automatically.");
+  console.warn("[db] MongoDB disconnected.");
 });
 
 mongoose.connection.on("reconnected", () => {
-  console.log("[db] Reconnected successfully.");
+  console.log("[db] MongoDB reconnected.");
 });

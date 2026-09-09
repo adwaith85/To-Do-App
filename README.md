@@ -130,7 +130,10 @@ The backend reads everything from `backend/.env`. Highlights:
   click **"Start a list"** (or press `Shift + Enter`) to switch to diamond-bullet
   list items — a single `Enter` moves to the next item, and pressing `Enter` a
   second time on an empty item **keeps the list typed so far** and drops back to
-  a normal continuing paragraph.
+  a normal continuing paragraph. List items are stored in the description with a
+  `• ` line prefix (saved to the database), so the **diamonds persist** — they
+  stay visible in paragraph mode, on the todo cards, in the editor, and in
+  reminder emails.
 - **8 themes + None** (`ThemePicker`): None (no theme), Light (solid white card),
   Dark, Love, Simple, Forest, Ocean, Sunset, Violet — picked as a colored card
   background from the options menu. Every themed surface (cards, compose box,
@@ -155,9 +158,14 @@ The backend reads everything from `backend/.env`. Highlights:
   On desktop they are hover-revealed (`lg:`), on touch/mobile they are always
   visible so no editor is needed.
 - **Layout toggle** — under the compose box a Vertical / Horizontal switch
-  (persisted in `localStorage`) flips the card list between a vertical stack
-  and a responsive grid: **2 cards per row on mobile, 3 per row on large
-  screens** (Archives uses the same responsive grid).
+  (persisted in `localStorage`). Horizontal mode sizes the grid by card count:
+  1 card = full width, 2 cards = two equal columns, 3+ cards = three equal
+  columns, and a trailing partial row keeps the same width as the others
+  (Archives uses the same responsive grid). Cards in a responsive grid also
+  grow to fit their content — every card is **equal width** (the grid stretches
+  them to `1fr`), but each card's **height follows its own content**. Descriptions
+  are shown in full (no line-clamping) with a `max-h-40` cap that scrolls
+  internally so no card grows unboundedly tall.
 
 ## Admin Monitoring Panel
 

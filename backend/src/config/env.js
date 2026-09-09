@@ -2,6 +2,10 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+if (!process.env.MONGO_URI) {
+  throw new Error("MONGO_URI is missing from .env");
+}
+
 const isProd = process.env.NODE_ENV === "production";
 
 export const env = {
@@ -9,11 +13,11 @@ export const env = {
   isProd,
   isTest: process.env.NODE_ENV === "test",
 
-  port: parseInt(process.env.PORT || "5050", 10),
+  port: parseInt(process.env.PORT, 10),
 
-  mongoUri: process.env.MONGO_URI || process.env.MONGO_URL,
+  mongoUri: process.env.MONGO_URI,
 
-  clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
+  clientUrl: process.env.CLIENT_URL ,
 
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET || "dev-access-secret",

@@ -1,5 +1,6 @@
 import { Pin, Calendar, Clock, Paperclip, Check, Archive, Trash2 } from "lucide-react";
 import { isWhiteTheme } from "../utils/theme";
+import RichDescription from "./RichDescription";
 
 const priorityTone = {
   low: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
@@ -54,8 +55,8 @@ export default function TodoCard({ todo, onToggle, onDelete, onArchive, onPin, o
     >
       {/* Pinned ribbon */}
       {todo.isPinned && (
-        <div className="absolute -top-0 left-4 flex -translate-y-1/2 items-center gap-1 rounded-full border border-brand-400/40 bg-brand-500/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-brand-300 backdrop-blur-sm">
-          <Pin className="h-2.5 w-2.5" /> Pinned
+        <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full border border-brand-400/40 bg-brand-500/20 px-1.5 py-0.5 text-brand-300 backdrop-blur-sm">
+          <Pin className="h-3 w-3" />
         </div>
       )}
 
@@ -86,9 +87,12 @@ export default function TodoCard({ todo, onToggle, onDelete, onArchive, onPin, o
           </span>
 
           {todo.description && (
-            <p className={`mt-1 line-clamp-2 whitespace-pre-line text-xs leading-relaxed ${light ? "text-slate-500" : "text-slate-400"}`}>
-              {todo.description}
-            </p>
+            <RichDescription
+              description={todo.description}
+              light={light}
+              textClass={light ? "text-slate-500" : "text-slate-400"}
+              className="mt-1 max-h-40 overflow-y-auto pr-1 text-xs leading-relaxed [scrollbar-width:thin]"
+            />
           )}
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -107,7 +111,7 @@ export default function TodoCard({ todo, onToggle, onDelete, onArchive, onPin, o
                 <Clock className="h-2.5 w-2.5" /> {fmtDateTime(todo.reminderAt)}
               </span>
             )}
-            {(todo.tags || []).slice(0, 3).map((t) => (
+            {(todo.tags || []).map((t) => (
               <span key={t} className={`rounded-md border px-1.5 py-0.5 text-[10px] ${light ? "border-slate-200 bg-slate-100 text-slate-600" : "border-white/10 bg-white/5 text-slate-400"}`}>
                 #{t}
               </span>

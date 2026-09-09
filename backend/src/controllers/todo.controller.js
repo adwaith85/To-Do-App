@@ -7,6 +7,9 @@ import path from "path";
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const MAX_HISTORY = 200;
 
+/** Parse a boolean that may arrive as a real boolean or a multipart string. */
+const toBool = (v) => v === true || v === "true" || v === 1 || v === "1";
+
 /** Append an entry to a todo's change history, capping the log size. */
 function recordHistory(todo, action, detail = "") {
   todo.history = todo.history || [];
@@ -66,7 +69,7 @@ export const createTodo = asyncHandler(async (req, res) => {
     priority: priority || "medium",
     dueDate: dueDate || null,
     tags: tags || [],
-    isPinned: Boolean(isPinned),
+    isPinned: toBool(isPinned),
     reminderAt: reminderAt || null,
     backgroundColor: backgroundColor || "",
     attachments,
@@ -103,7 +106,7 @@ export const updateTodo = asyncHandler(async (req, res) => {
   if (priority !== undefined && priority !== todo.priority) { todo.priority = priority; changed.push("priority"); }
   if (dueDate !== undefined && !timeEqual(dueDate, todo.dueDate)) { todo.dueDate = dueDate || null; changed.push("dueDate"); }
   if (tags !== undefined && JSON.stringify(tags) !== JSON.stringify(todo.tags || [])) { todo.tags = tags; changed.push("tags"); }
-  if (isPinned !== undefined) todo.isPinned = Boolean(isPinned);
+  if (isPinned !== undefined) todo.isPinned = toBool(isPinned);
   if (backgroundColor !== undefined && backgroundColor !== todo.backgroundColor) { todo.backgroundColor = backgroundColor; changed.push("theme"); }
   if (status !== undefined && status !== todo.status) { todo.status = status; changed.push("status"); }
   if (reminderAt !== undefined && !timeEqual(reminderAt, todo.reminderAt)) {

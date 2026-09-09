@@ -194,8 +194,10 @@ export default function TodoCompose({ onCreated }) {
       </div>
 
       {/* Description paragraph */}
-      <div className="px-4 pb-1">
-        <ListEditor ref={listRef} value={description} onChange={handleDescChange} placeholder="Write a description..." light={light} />
+      <div className="px-4 pb-2">
+        <div className={`min-h-14 rounded-xl border px-3 py-2 transition ${light ? "border-slate-200 bg-slate-50/60" : "border-white/10 bg-white/[0.03]"}`}>
+          <ListEditor ref={listRef} value={description} onChange={handleDescChange} placeholder="Write a description..." light={light} />
+        </div>
       </div>
 
       {/* Quick action chips (always visible) */}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Pin, Bell, Palette, List, Archive, Trash2, Calendar, Flag } from "lucide-react";
+import { X, Pin, Bell, Palette, List, Archive, Trash2, Calendar, Flag, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import client from "../api/client";
 import ThemePicker from "./ThemePicker";
@@ -125,7 +125,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
     <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div
-        className={`relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border bg-ink-900/95 backdrop-blur-xl shadow-2xl animate-slide-up ${light ? "border-slate-200" : "border-white/10"}`}
+        className={`relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border bg-ink-900/95 backdrop-blur-xl shadow-2xl animate-slide-up ${light ? "border-slate-200" : "border-white/10"}`}
         style={form.backgroundColor ? { background: form.backgroundColor } : undefined}
       >
         {/* Header */}
@@ -137,73 +137,146 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
         </div>
 
         <form onSubmit={handleSubmit} className="p-5">
-          {/* Title */}
-          <input
-            ref={titleRef}
-            type="text"
-            value={form.task}
-            onChange={(e) => setForm({ ...form, task: e.target.value })}
-            placeholder="Title..."
-            maxLength={200}
-            className={`mb-2 w-full rounded-xl border px-4 py-3 text-sm font-semibold outline-none transition focus:ring-4 ${light ? "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-brand-500/15" : "border-white/10 bg-white/[0.04] text-white placeholder:text-slate-600 focus:border-brand-500/50 focus:bg-white/[0.06]"}`}
-          />
+          <div className="grid gap-6 md:grid-cols-[1.4fr_1fr]">
+            {/* ─── Left · content ─── */}
+            <div className="min-w-0 space-y-4">
+              <input
+                ref={titleRef}
+                type="text"
+                value={form.task}
+                onChange={(e) => setForm({ ...form, task: e.target.value })}
+                placeholder="Title..."
+                maxLength={200}
+                className={`w-full rounded-xl border px-4 py-3.5 text-base font-semibold outline-none transition focus:ring-4 ${light ? "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-brand-500/15" : "border-white/10 bg-white/[0.04] text-white placeholder:text-slate-600 focus:border-brand-500/50 focus:bg-white/[0.06]"}`}
+              />
 
-          {/* Description as list/paragraph editor */}
-          <ListEditor
-            ref={listRef}
-            value={form.description}
-            onChange={(v) => setForm((f) => ({ ...f, description: v }))}
-            placeholder="Write a description..."
-            light={light}
-          />
+              <div className={`min-h-24 rounded-xl border p-3 transition ${light ? "border-slate-200 bg-slate-50/60 focus-within:border-brand-500/40" : "border-white/10 bg-white/[0.03] focus-within:border-brand-500/30"}`}>
+                <ListEditor
+                  ref={listRef}
+                  value={form.description}
+                  onChange={(v) => setForm((f) => ({ ...f, description: v }))}
+                  placeholder="Write a description..."
+                  light={light}
+                />
+              </div>
+            </div>
 
-          <div className={`my-3 h-px ${light ? "bg-slate-200" : "bg-white/5"}`} />
+            {/* ─── Right · options ─── */}
+            <div className={`space-y-4 rounded-2xl border p-4 ${light ? "border-slate-200 bg-white/40" : "border-white/10 bg-white/[0.03]"}`}>
+              <div className={`flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider ${light ? "text-slate-500" : "text-slate-400"}`}>
+                <Settings2 className="h-3.5 w-3.5" /> Options
+              </div>
 
-          {/* Quick actions */}
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setForm((f) => ({ ...f, isPinned: !f.isPinned }))}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all duration-200 ${
-                form.isPinned
-                  ? light
-                    ? "border-brand-500/40 bg-brand-500/10 text-brand-600 shadow-[0_0_12px_-2px_rgba(116,94,246,0.5)]"
-                    : "border-brand-400/60 bg-brand-500/20 text-brand-200 shadow-[0_0_12px_-2px_rgba(116,94,246,0.6)]"
-                  : light
-                    ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-brand-500/40 hover:text-brand-600"
-                    : "border-white/10 bg-white/5 text-slate-400 hover:border-brand-400/40 hover:text-brand-300"
-              }`}
-            >
-              <Pin className={`h-3 w-3 ${form.isPinned ? "rotate-45" : ""} transition-transform`} />
-              {form.isPinned ? "Pinned to top" : "Pin to top"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowReminder(!showReminder)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all duration-200 ${
-                form.reminderAt
-                  ? light
-                    ? "border-accent-500/40 bg-accent-500/10 text-accent-600"
-                    : "border-accent-400/50 bg-accent-400/15 text-accent-300"
-                  : light
-                    ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-accent-500/40 hover:text-accent-600"
-                    : "border-white/10 bg-white/5 text-slate-400 hover:border-accent-400/40 hover:text-accent-300"
-              }`}
-            >
-              <Bell className="h-3 w-3" />
-              {form.reminderAt ? "Reminder set" : "Remind me"}
-            </button>
-            <button
-              type="button"
-              onClick={() => listRef.current?.startList()}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${light ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-brand-500/40 hover:text-brand-600" : "border-white/10 bg-white/5 text-slate-400 hover:border-brand-400/40 hover:text-brand-300"}`}
-            >
-              <List className="h-3 w-3" /> Add list
-            </button>
+              {/* Pin / Reminder / Add list */}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, isPinned: !f.isPinned }))}
+                  className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all duration-200 ${
+                    form.isPinned
+                      ? light
+                        ? "border-brand-500/40 bg-brand-500/10 text-brand-600 shadow-[0_0_12px_-2px_rgba(116,94,246,0.5)]"
+                        : "border-brand-400/60 bg-brand-500/20 text-brand-200 shadow-[0_0_12px_-2px_rgba(116,94,246,0.6)]"
+                      : light
+                        ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-brand-500/40 hover:text-brand-600"
+                        : "border-white/10 bg-white/5 text-slate-400 hover:border-brand-400/40 hover:text-brand-300"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Pin className={`h-3.5 w-3.5 ${form.isPinned ? "rotate-45" : ""} transition-transform`} /> Pin to top
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${form.isPinned ? (light ? "bg-brand-500/15 text-brand-600" : "bg-brand-500/20 text-brand-200") : light ? "bg-slate-200 text-slate-500" : "bg-white/10 text-slate-500"}`}>
+                    {form.isPinned ? "Pinned" : "Off"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowReminder(!showReminder)}
+                  className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all duration-200 ${
+                    form.reminderAt
+                      ? light
+                        ? "border-accent-500/40 bg-accent-500/10 text-accent-600"
+                        : "border-accent-400/50 bg-accent-400/15 text-accent-300"
+                      : light
+                        ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-accent-500/40 hover:text-accent-600"
+                        : "border-white/10 bg-white/5 text-slate-400 hover:border-accent-400/40 hover:text-accent-300"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Bell className="h-3.5 w-3.5" /> {form.reminderAt ? "Reminder set" : "Remind me"}
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${form.reminderAt ? (light ? "bg-accent-500/15 text-accent-600" : "bg-accent-500/20 text-accent-300") : light ? "bg-slate-200 text-slate-500" : "bg-white/10 text-slate-500"}`}>
+                    {form.reminderAt ? "On" : "Off"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => listRef.current?.startList()}
+                  className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${light ? "border-brand-500/30 bg-brand-500/5 text-brand-600 hover:bg-brand-500/10" : "border-brand-400/30 bg-brand-500/10 text-brand-300 hover:bg-brand-500/20"}`}
+                >
+                  <span className="flex items-center gap-2"><List className="h-3.5 w-3.5" /> Add list</span>
+                  <List className="h-3 w-3 opacity-60" />
+                </button>
+              </div>
+
+              {/* Theme */}
+              <div>
+                <div className={`mb-2 flex items-center gap-2 text-xs font-semibold ${light ? "text-slate-600" : "text-slate-400"}`}>
+                  <Palette className="h-3.5 w-3.5" /> Theme
+                </div>
+                <ThemePicker value={form.backgroundColor} onChange={(v) => setForm((f) => ({ ...f, backgroundColor: v }))} />
+              </div>
+
+              {/* Priority + Due date */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className={`mb-1.5 flex items-center gap-2 text-xs font-semibold ${light ? "text-slate-600" : "text-slate-400"}`}>
+                    <Flag className="h-3.5 w-3.5" /> Priority
+                  </div>
+                  <select
+                    value={form.priority}
+                    onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                    className={`w-full rounded-lg border px-2.5 py-2 text-xs outline-none transition focus:border-brand-500/50 cursor-pointer ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+                <div>
+                  <div className={`mb-1.5 flex items-center gap-2 text-xs font-semibold ${light ? "text-slate-600" : "text-slate-400"}`}>
+                    <Calendar className="h-3.5 w-3.5" /> Due date
+                  </div>
+                  <input
+                    type="date"
+                    value={form.dueDate}
+                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                    className={`w-full rounded-lg border px-2.5 py-2 text-xs outline-none transition focus:border-brand-500/50 ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
+                  />
+                </div>
+              </div>
+
+              {/* Tags */}
+              <div>
+                <div className={`mb-1.5 flex items-center gap-2 text-xs font-semibold ${light ? "text-slate-600" : "text-slate-400"}`}>
+                  <List className="h-3.5 w-3.5" /> Tags
+                </div>
+                <input
+                  type="text"
+                  value={form.tags}
+                  maxLength={300}
+                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                  placeholder="comma separated"
+                  className={`w-full rounded-lg border px-3 py-2 text-xs outline-none transition focus:border-brand-500/50 ${light ? "border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400" : "border-white/10 bg-white/[0.03] text-slate-300 placeholder:text-slate-600"}`}
+                />
+              </div>
+            </div>
           </div>
 
           {showReminder && (
-            <div className="mb-4">
+            <div className="mt-4">
               <ReminderPicker
                 value={form.reminderAt}
                 onChange={(v) => setForm((f) => ({ ...f, reminderAt: v }))}
@@ -211,58 +284,6 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
               />
             </div>
           )}
-
-          {/* Options */}
-          <div className="space-y-4">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-400">
-                <Palette className="h-3.5 w-3.5" /> Theme
-              </div>
-              <ThemePicker value={form.backgroundColor} onChange={(v) => setForm((f) => ({ ...f, backgroundColor: v }))} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-slate-400">
-                  <Flag className="h-3.5 w-3.5" /> Priority
-                </div>
-                <select
-                  value={form.priority}
-                  onChange={(e) => setForm({ ...form, priority: e.target.value })}
-                  className={`w-full rounded-lg border px-3 py-2 text-xs outline-none transition focus:border-brand-500/50 cursor-pointer ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-              </div>
-              <div>
-                <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-slate-400">
-                  <Calendar className="h-3.5 w-3.5" /> Due date
-                </div>
-                <input
-                  type="date"
-                  value={form.dueDate}
-                  onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                  className={`w-full rounded-lg border px-3 py-2 text-xs outline-none transition focus:border-brand-500/50 ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-slate-400">
-                <List className="h-3.5 w-3.5" /> Tags
-              </div>
-              <input
-                type="text"
-                value={form.tags}
-                maxLength={300}
-                onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                placeholder="comma separated"
-                className={`w-full rounded-lg border px-3 py-2 text-xs outline-none transition focus:border-brand-500/50 ${light ? "border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400" : "border-white/10 bg-white/[0.03] text-slate-300 placeholder:text-slate-600"}`}
-              />
-            </div>
-          </div>
 
           {/* Actions */}
           <div className="mt-5 flex gap-3">
