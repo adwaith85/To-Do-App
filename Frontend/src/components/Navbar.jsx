@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Home, Bell, User, LogOut, Menu, X, CheckCircle } from "lucide-react";
+import { Home, Bell, User, LogOut, Menu, X, CheckCircle, Archive } from "lucide-react";
 import { useAuth } from "../context/useAuth";
 
 const NAV = [
   { to: "/", icon: Home, label: "Home" },
   { to: "/reminders", icon: Bell, label: "Reminders" },
+  { to: "/archives", icon: Archive, label: "Archives" },
   { to: "/profile", icon: User, label: "Profile" },
 ];
 

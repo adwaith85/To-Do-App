@@ -5,7 +5,6 @@ import client from "../api/client";
 import { useAuth } from "../context/useAuth";
 import { useNavigate } from "react-router-dom";
 import Spinner from "../components/Spinner";
-import Navbar from "../components/Navbar";
 
 function deviceLabel(ua = "") {
   const s = ua.toLowerCase();
@@ -96,7 +95,6 @@ export default function Profile() {
 
   return (
     <div className="min-h-screen">
-      <Navbar />
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 animate-fade-in">
       <header className="mb-8">
         <div className="flex items-center gap-3 mb-2">

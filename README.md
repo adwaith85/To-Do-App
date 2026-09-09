@@ -27,9 +27,12 @@ Todo-App/
         ├── context/             AuthProvider / useAuth
         ├── components/          AuthLayout, ProtectedRoute, PublicRoute,
         │                        AdminProtectedRoute (role-gated), AdminLayout,
+        │                        UserLayout, TodoCompose, TodoForm, TodoCard,
+        │                        ThemePicker, ReminderPicker, ListEditor,
         │                        PasswordStrength, Spinner, admin/ (ui kit, utils)
         └── pages/               Login, Register, VerifyOtp,
-                                 ForgotPassword, ResetPassword, Todos
+                                 ForgotPassword, ResetPassword, Todos, Reminders,
+                                 Archives, Profile
                                  admin/ (Dashboard, Users, UserDetail, Security,
                                  Todos, Audit) — lazy-loaded
 ```
@@ -118,6 +121,44 @@ The backend reads everything from `backend/.env`. Highlights:
 - zxcvbn live password strength meter · react-hot-toast notifications
 - Loading spinners in buttons · resend-code cooldown · devOtp banner
 
+**Todo workspace**
+- **Persistent navbar** — a shared `UserLayout` keeps the top bar mounted; tab
+  clicks swap only the content area (no full page/navbar re-render), and Todo /
+  Reminders / Archives / Profile pages are lazy-loaded for a faster first paint.
+- **Compose box** — professional "Title..." input with a paragraph description
+  below. Auto-saves while typing (debounced) and supports a **list mode**:
+  click **"Start a list"** (or press `Shift + Enter`) to switch to diamond-bullet
+  list items — a single `Enter` moves to the next item, and pressing `Enter` a
+  second time on an empty item **keeps the list typed so far** and drops back to
+  a normal continuing paragraph.
+- **8 themes + None** (`ThemePicker`): None (no theme), Light (solid white card),
+  Dark, Love, Simple, Forest, Ocean, Sunset, Violet — picked as a colored card
+  background from the options menu. Every themed surface (cards, compose box,
+  edit modal) adapts its text contrast so the **Light/white** theme is fully
+  readable, and the theme washes are opaque enough that the accent color shows
+  clearly.
+- **Pin to top** — a distinct glowing toggle button on the compose box, edit
+  modal and each card (ribbon badge on pinned cards).
+- **Reminder picker** — a built-in calendar (past dates disabled) plus a
+  12-hour clock with minute + AM/PM selectors. Only **future** times are
+  accepted (validated client-side and again on the API); the **Done** button
+  closes the picker after a valid future time is set.
+- **Full lifecycle record** — the todo document tracks `lastEditedAt`,
+  `deletedAt`, `archivedAt`, `restoredAt`, `reminderSentAt` and a capped
+  `history[]` array (create, edit, complete, archive/restore, delete,
+  reminder set/sent) so admins can analyse how tasks evolve over time.
+  `GET /api/admin/todos` returns these fields on every row.
+- **Archives** — archive any task from the card action bar or the edit modal.
+  Archived tasks leave the main/reminder lists and live on the dedicated
+  `/archives` page (navbar tab) where they can be restored or deleted.
+- **Card quick actions** — pin, archive and delete sit directly on every card.
+  On desktop they are hover-revealed (`lg:`), on touch/mobile they are always
+  visible so no editor is needed.
+- **Layout toggle** — under the compose box a Vertical / Horizontal switch
+  (persisted in `localStorage`) flips the card list between a vertical stack
+  and a responsive grid: **2 cards per row on mobile, 3 per row on large
+  screens** (Archives uses the same responsive grid).
+
 ## Admin Monitoring Panel
 
 There is **no separate admin login page** — admins use the exact same login
@@ -197,7 +238,17 @@ logout. No Postman or automated suite is required.
 | POST | `/api/auth/forgot-password` | — | generic reply + code |
 | POST | `/api/auth/reset-password` | — | new password, kills sessions |
 | GET  | `/api/auth/admin/ping` | bearer + role | RBAC demo |
-| *    | `/api/todos…` | bearer | per-user CRUD |
+| GET  | `/api/todos` | bearer | active todos (excludes archived/deleted) |
+| GET  | `/api/todos/reminders` | bearer | todos with future/past reminders |
+| GET  | `/api/todos/archived` | bearer | archived todo list |
+| POST | `/api/todos` | bearer | create todo (title, description, theme, pin, reminder…) |
+| PATCH | `/api/todos/:id` | bearer | update todo |
+| PATCH | `/api/todos/:id/toggle` | bearer | complete/undo |
+| PATCH | `/api/todos/:id/archive` | bearer | archive a todo (unpins it) |
+| PATCH | `/api/todos/:id/unarchive` | bearer | restore an archived todo |
+| PATCH | `/api/todos/:id/reorder` | bearer | save drag-and-drop order |
+| DELETE | `/api/todos/:id/attachments/:attachmentId` | bearer | remove one attachment |
+| DELETE | `/api/todos/:id` | bearer | soft-delete a todo |
 | GET  | `/api/admin/users` | admin | list + filter/search users |
 | GET  | `/api/admin/users/:id` | admin | single user detail + activity |
 | PATCH | `/api/admin/users/:id/lock` | admin | manually lock account |

@@ -53,10 +53,16 @@ const todoSchema = new mongoose.Schema(
     },
     isPinned: { type: Boolean, default: false },
     backgroundColor: { type: String, default: "" },
+    isArchived: { type: Boolean, default: false },
     isDeleted: { type: Boolean, default: false },
     completedAt: { type: Date, default: null },
+    lastEditedAt: { type: Date, default: null },
+    deletedAt: { type: Date, default: null },
+    archivedAt: { type: Date, default: null },
+    restoredAt: { type: Date, default: null },
     reminderAt: { type: Date, default: null },
     reminderSent: { type: Boolean, default: false },
+    reminderSentAt: { type: Date, default: null },
     attachments: {
       type: [{
         url: String,
@@ -71,6 +77,14 @@ const todoSchema = new mongoose.Schema(
       },
     },
     order: { type: Number, default: 0 },
+    history: {
+      type: [{
+        action: { type: String, required: true },
+        at: { type: Date, default: Date.now },
+        detail: { type: String, default: "" },
+      }],
+      default: [],
+    },
   },
   { timestamps: true }
 );
@@ -86,6 +100,7 @@ todoSchema.pre("validate", function () {
 
 todoSchema.index({ user: 1, isPinned: -1, createdAt: -1 });
 todoSchema.index({ user: 1, isDeleted: 1 });
+todoSchema.index({ user: 1, isArchived: 1 });
 todoSchema.index({ user: 1, dueDate: 1 });
 todoSchema.index({ user: 1, reminderAt: 1 });
 

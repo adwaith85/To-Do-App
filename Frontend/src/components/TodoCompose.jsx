@@ -1,57 +1,49 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, Check, Menu, X, Bell, Pin, Palette, Calendar, Flag } from "lucide-react";
+import { Plus, Check, Menu, X, Bell, Pin, Palette, List } from "lucide-react";
 import toast from "react-hot-toast";
 import client from "../api/client";
-
-const BG_OPTIONS = [
-  { label: "Default", value: "" },
-  { label: "Blue", value: "rgba(56,189,248,0.08)" },
-  { label: "Green", value: "rgba(52,211,153,0.08)" },
-  { label: "Amber", value: "rgba(251,191,36,0.08)" },
-  { label: "Rose", value: "rgba(251,113,133,0.08)" },
-  { label: "Violet", value: "rgba(167,139,250,0.08)" },
-];
-
-const PRIORITY_OPTIONS = [
-  { label: "Low", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "High", value: "high" },
-];
+import ThemePicker from "./ThemePicker";
+import ReminderPicker from "./ReminderPicker";
+import ListEditor from "./ListEditor";
+import { isWhiteTheme } from "../utils/theme";
 
 export default function TodoCompose({ onCreated }) {
   const [open, setOpen] = useState(false);
-  const [task, setTask] = useState("");
+  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
   const [dueDate, setDueDate] = useState("");
   const [reminderAt, setReminderAt] = useState("");
   const [isPinned, setIsPinned] = useState(false);
-  const [backgroundColor, setBackgroundColor] = useState("");
+  const [theme, setTheme] = useState("");
   const [tags, setTags] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showReminder, setShowReminder] = useState(false);
   const [savedId, setSavedId] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const areaRef = useRef(null);
-  const taskRef = useRef(null);
+  const titleRef = useRef(null);
   const saveTimer = useRef(null);
   const hasTyped = useRef(false);
   const confirming = useRef(false);
+  const listRef = useRef(null);
 
-  // Auto-focus task input on open
+  const light = isWhiteTheme(theme);
+
+  const startList = () => {
+    listRef.current?.startList();
+    setMenuOpen(false);
+  };
+
   useEffect(() => {
-    if (open) {
-      setTimeout(() => taskRef.current?.focus(), 150);
-    }
+    if (open) setTimeout(() => titleRef.current?.focus(), 150);
   }, [open]);
 
-  // Close menu on outside click
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e) => {
-      if (areaRef.current && !areaRef.current.contains(e.target)) {
-        setMenuOpen(false);
-      }
+      if (areaRef.current && !areaRef.current.contains(e.target)) setMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -59,24 +51,23 @@ export default function TodoCompose({ onCreated }) {
 
   const buildPayload = useCallback(() => {
     const fd = new FormData();
-    fd.append("task", task.trim());
+    fd.append("task", title.trim());
     fd.append("description", description.trim());
     fd.append("priority", priority);
     fd.append("isPinned", String(isPinned));
-    fd.append("backgroundColor", backgroundColor);
+    fd.append("backgroundColor", theme);
     if (dueDate) fd.append("dueDate", dueDate);
     if (reminderAt) fd.append("reminderAt", reminderAt);
     tags.split(",").map((t) => t.trim()).filter(Boolean).forEach((t) => fd.append("tags", t));
     return fd;
-  }, [task, description, priority, dueDate, reminderAt, isPinned, backgroundColor, tags]);
+  }, [title, description, priority, dueDate, reminderAt, isPinned, theme, tags]);
 
   const doSave = useCallback(async () => {
     if (saving) return;
-    const text = task.trim();
-    if (!text && !savedId) return; // nothing to save yet
+    const text = title.trim();
+    if (!text && !savedId) return;
     if (!text && savedId) {
-      // empty — delete the draft
-      try { await client.delete(`/api/todos/${savedId}`); } catch {}
+      try { await client.delete(`/api/todos/${savedId}`); } catch { /* ignore */ }
       setSavedId(null);
       return;
     }
@@ -95,39 +86,25 @@ export default function TodoCompose({ onCreated }) {
         setSavedId(data.data._id);
         onCreated?.(data.data, false);
       }
-    } catch {
-      toast.error("Could not save");
+    } catch (err) {
+      if (err.response?.data?.message) toast.error(err.response.data.message);
+      else toast.error("Could not save");
     } finally {
       setSaving(false);
     }
-  }, [task, description, priority, dueDate, reminderAt, isPinned, backgroundColor, tags, savedId, saving, buildPayload, onCreated]);
+  }, [title, savedId, saving, buildPayload, onCreated]);
 
-  // Debounced auto-save while typing
   const scheduleSave = useCallback(() => {
     hasTyped.current = true;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => doSave(), 1200);
   }, [doSave]);
 
-  const handleTaskChange = (e) => {
-    setTask(e.target.value);
-    scheduleSave();
-  };
-
-  const handleFieldChange = (setter) => (e) => {
-    setter(e.target.value);
-    scheduleSave();
-  };
-
-  const handleBgClick = (bg) => {
-    setBackgroundColor(bg);
-    scheduleSave();
-  };
-
-  const handleTogglePin = () => {
-    setIsPinned((p) => !p);
-    setTimeout(() => scheduleSave(), 0);
-  };
+  const handleTitleChange = (e) => { setTitle(e.target.value); scheduleSave(); };
+  const handleDescChange = useCallback((v) => { setDescription(v); scheduleSave(); }, [scheduleSave]);
+  const handleTheme = (v) => { setTheme(v); scheduleSave(); };
+  const handleTogglePin = () => { setIsPinned((p) => !p); setTimeout(() => scheduleSave(), 0); };
+  const handleReminder = (v) => { setReminderAt(v); scheduleSave(); };
 
   const handleConfirm = () => {
     confirming.current = true;
@@ -138,36 +115,22 @@ export default function TodoCompose({ onCreated }) {
   };
 
   const collapse = () => {
-    setOpen(false);
-    setMenuOpen(false);
-    setTask("");
-    setDescription("");
-    setPriority("medium");
-    setDueDate("");
-    setReminderAt("");
-    setIsPinned(false);
-    setBackgroundColor("");
-    setTags("");
-    setSavedId(null);
-    hasTyped.current = false;
+    setOpen(false); setMenuOpen(false); setShowReminder(false);
+    setTitle(""); setDescription(""); setPriority("medium"); setDueDate("");
+    setReminderAt(""); setIsPinned(false); setTheme(""); setTags("");
+    setSavedId(null); hasTyped.current = false;
   };
 
-  // Dismiss on outside click — save if typed, delete if empty draft
   const handleBlur = (e) => {
     if (confirming.current) return;
     if (areaRef.current && !areaRef.current.contains(e.relatedTarget)) {
       clearTimeout(saveTimer.current);
-      if (hasTyped.current) {
-        doSave();
-      } else if (savedId) {
-        client.delete(`/api/todos/${savedId}`).catch(() => {});
-        setSavedId(null);
-      }
+      if (hasTyped.current) doSave();
+      else if (savedId) { client.delete(`/api/todos/${savedId}`).catch(() => {}); setSavedId(null); }
       collapse();
     }
   };
 
-  // ─── Floating + button ───
   if (!open) {
     return (
       <button
@@ -177,29 +140,28 @@ export default function TodoCompose({ onCreated }) {
         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-500/15 text-brand-400 transition-all duration-300 group-hover:bg-brand-500/25 group-hover:scale-110">
           <Plus className="h-4 w-4 transition-transform duration-300 group-hover:rotate-90" />
         </span>
-        <span className="transition-opacity duration-300">Add a task...</span>
+        <span className="transition-opacity duration-300">Create a new task...</span>
       </button>
     );
   }
 
-  // ─── Compose area ───
   return (
     <div
       ref={areaRef}
       tabIndex={-1}
       onBlur={handleBlur}
-      className="mb-5 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-sm shadow-xl shadow-brand-500/5 animate-slide-up"
-      style={backgroundColor ? { background: backgroundColor } : undefined}
+      className={`mb-5 overflow-hidden rounded-2xl border backdrop-blur-sm shadow-xl shadow-brand-500/5 animate-slide-up ${
+        light ? "border-slate-200 bg-white" : "border-white/10 bg-white/[0.04]"
+      }`}
+      style={theme ? { background: theme } : undefined}
     >
-      {/* Top bar: tick + hamburger */}
+      {/* Top bar */}
       <div className="flex items-center justify-between px-4 pt-3 pb-1">
-        {saving && (
+        {saving ? (
           <span className="text-[10px] text-slate-600 animate-pulse">saving...</span>
-        )}
-        {!saving && savedId && (
+        ) : savedId ? (
           <span className="text-[10px] text-emerald-500/70">saved</span>
-        )}
-        {!saving && !savedId && <span />}
+        ) : <span />}
         <div className="flex items-center gap-1">
           <button
             onMouseDown={(e) => { e.preventDefault(); handleConfirm(); }}
@@ -210,7 +172,7 @@ export default function TodoCompose({ onCreated }) {
           </button>
           <button
             onMouseDown={(e) => { e.preventDefault(); setMenuOpen(!menuOpen); }}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+            className={`rounded-lg p-1.5 transition ${light ? "text-slate-500 hover:bg-slate-200 hover:text-slate-900" : "text-slate-400 hover:bg-white/10 hover:text-white"}`}
             title="Options"
           >
             <Menu className="h-4 w-4" />
@@ -218,132 +180,130 @@ export default function TodoCompose({ onCreated }) {
         </div>
       </div>
 
-      {/* Task input — always visible */}
-      <div className="px-4 pb-2">
+      {/* Title — professional placeholder */}
+      <div className="px-4 pb-1.5">
         <input
-          ref={taskRef}
+          ref={titleRef}
           type="text"
-          value={task}
-          onChange={handleTaskChange}
-          placeholder="What are you working on?"
+          value={title}
+          onChange={handleTitleChange}
+          placeholder="Title..."
           maxLength={200}
-          className="w-full bg-transparent text-sm font-medium text-white placeholder:text-slate-600 outline-none"
+          className={`w-full bg-transparent text-sm font-semibold outline-none ${light ? "text-slate-900 placeholder:text-slate-400" : "text-white placeholder:text-slate-600"}`}
         />
       </div>
 
-      {/* Description — always visible */}
-      <div className="px-4 pb-3">
-        <textarea
-          rows={1}
-          value={description}
-          maxLength={2000}
-          onChange={handleFieldChange(setDescription)}
-          placeholder="Add a note..."
-          className="w-full resize-none bg-transparent text-xs text-slate-400 placeholder:text-slate-600 outline-none"
-        />
+      {/* Description paragraph */}
+      <div className="px-4 pb-1">
+        <ListEditor ref={listRef} value={description} onChange={handleDescChange} placeholder="Write a description..." light={light} />
       </div>
 
-      {/* Options panel — slides open from hamburger */}
-      <div
-        className={`grid transition-all duration-300 ease-in-out ${
-          menuOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-        }`}
-      >
-        <div className="overflow-hidden border-t border-white/5">
-          <div className="space-y-3 px-4 py-3">
-            {/* Reminder */}
-            <div className="flex items-center gap-3">
-              <Bell className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-              <input
-                type="datetime-local"
-                value={reminderAt}
-                onChange={handleFieldChange(setReminderAt)}
-                className="flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-slate-300 outline-none transition focus:border-brand-500/50"
-              />
+      {/* Quick action chips (always visible) */}
+      <div className="flex items-center gap-1.5 px-4 pb-2.5 pt-1 flex-wrap">
+        <button
+          type="button"
+          onClick={handleTogglePin}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all duration-200 ${
+            isPinned
+              ? light
+                ? "border-brand-500/40 bg-brand-500/10 text-brand-600 shadow-[0_0_12px_-2px_rgba(116,94,246,0.5)]"
+                : "border-brand-400/60 bg-brand-500/20 text-brand-200 shadow-[0_0_12px_-2px_rgba(116,94,246,0.6)]"
+              : light
+                ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-brand-500/40 hover:text-brand-600"
+                : "border-white/10 bg-white/5 text-slate-400 hover:border-brand-400/40 hover:text-brand-300"
+          }`}
+        >
+          <Pin className={`h-3 w-3 ${isPinned ? "rotate-45" : ""} transition-transform`} />
+          {isPinned ? "Pinned to top" : "Pin to top"}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setShowReminder(!showReminder); setMenuOpen(false); }}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all duration-200 ${
+            reminderAt
+              ? light
+                ? "border-accent-500/40 bg-accent-500/10 text-accent-600"
+                : "border-accent-400/50 bg-accent-400/15 text-accent-300"
+              : light
+                ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-accent-500/40 hover:text-accent-600"
+                : "border-white/10 bg-white/5 text-slate-400 hover:border-accent-400/40 hover:text-accent-300"
+          }`}
+        >
+          <Bell className="h-3 w-3" />
+          {reminderAt ? "Reminder set" : "Remind me"}
+        </button>
+      </div>
+
+      {/* Reminder picker */}
+      {showReminder && (
+        <div className="px-4 pb-3">
+          <ReminderPicker
+            value={reminderAt}
+            onChange={handleReminder}
+            onDone={() => setShowReminder(false)}
+          />
+        </div>
+      )}
+
+      {/* Options panel */}
+      <div className={`grid transition-all duration-300 ease-in-out ${menuOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className={`overflow-hidden border-t ${light ? "border-slate-200" : "border-white/5"}`}>
+          <div className="space-y-4 px-4 py-3">
+            {/* Theme */}
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-slate-400">
+                <Palette className="h-3.5 w-3.5" /> Theme
+              </div>
+              <ThemePicker value={theme} onChange={handleTheme} />
             </div>
 
             {/* Pin */}
-            <div className="flex items-center gap-3">
-              <Pin className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-slate-400">
+                <Pin className="h-3.5 w-3.5" /> Pin
+              </div>
               <button
                 type="button"
                 onClick={handleTogglePin}
-                className={`relative h-5 w-9 rounded-full transition-colors ${isPinned ? "bg-brand-500" : "bg-white/10"}`}
+                className={`relative flex h-7 w-12 items-center rounded-full px-0.5 transition-colors duration-300 ${
+                  isPinned ? "bg-brand-500 shadow-[0_0_14px_-2px_rgba(116,94,246,0.7)]" : "bg-white/10"
+                }`}
               >
                 <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${isPinned ? "translate-x-4" : "translate-x-0.5"}`}
-                />
+                  className={`absolute flex h-6 w-6 items-center justify-center rounded-full bg-white text-brand-500 shadow transition-transform duration-300 ${
+                    isPinned ? "translate-x-5 rotate-45" : "translate-x-0"
+                  }`}
+                >
+                  <Pin className="h-3 w-3" />
+                </span>
               </button>
-              <span className="text-[11px] text-slate-500">{isPinned ? "Pinned" : "Pin to top"}</span>
+              <span className="ml-2 text-[11px] text-slate-500">{isPinned ? "Pinned to top" : "Pin to top"}</span>
             </div>
 
-            {/* Background colors */}
-            <div className="flex items-center gap-3">
-              <Palette className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-              <div className="flex gap-2">
-                {BG_OPTIONS.map((bg) => (
-                  <button
-                    key={bg.label}
-                    type="button"
-                    onClick={() => handleBgClick(bg.value)}
-                    title={bg.label}
-                    className={`h-5 w-5 rounded-full border-2 transition-all duration-200 ${
-                      backgroundColor === bg.value ? "border-brand-400 scale-125" : "border-white/10 hover:border-white/30"
-                    }`}
-                    style={{ background: bg.value || "rgba(255,255,255,0.06)" }}
-                  />
-                ))}
+            {/* Add list — starts list mode in the description */}
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-slate-400">
+                <List className="h-3.5 w-3.5" /> Add list
               </div>
+              <button
+                type="button"
+                onClick={startList}
+                className={`flex w-full items-center justify-center gap-2 rounded-lg border py-2 text-[11px] font-bold transition ${light ? "border-brand-500/30 bg-brand-500/5 text-brand-600 hover:bg-brand-500/10" : "border-brand-400/30 bg-brand-500/10 text-brand-300 hover:bg-brand-500/20"}`}
+              >
+                <List className="h-3.5 w-3.5" /> Start a list in the description
+              </button>
+              <p className={`mt-1.5 text-[10px] leading-relaxed ${light ? "text-slate-500" : "text-slate-600"}`}>
+                In list mode, press <span className={light ? "text-slate-700" : "text-slate-400"}>Enter</span> for the next item and <span className={light ? "text-slate-700" : "text-slate-400"}>Enter twice</span> to finish and continue as a paragraph.
+              </p>
             </div>
 
-            {/* Due date */}
-            <div className="flex items-center gap-3">
-              <Calendar className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-              <input
-                type="date"
-                value={dueDate}
-                onChange={handleFieldChange(setDueDate)}
-                className="flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-slate-300 outline-none transition focus:border-brand-500/50"
-              />
-            </div>
-
-            {/* Priority */}
-            <div className="flex items-center gap-3">
-              <Flag className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-              <div className="flex gap-1.5">
-                {PRIORITY_OPTIONS.map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    onClick={() => { setPriority(p.value); scheduleSave(); }}
-                    className={`rounded-lg px-2.5 py-1 text-[10px] font-medium transition-all duration-200 ${
-                      priority === p.value
-                        ? p.value === "high"
-                          ? "bg-rose-500/20 text-rose-300 ring-1 ring-rose-400/30"
-                          : p.value === "low"
-                            ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30"
-                            : "bg-amber-500/20 text-amber-300 ring-1 ring-amber-400/30"
-                        : "bg-white/5 text-slate-500 hover:bg-white/10"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Tags */}
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] text-slate-500 shrink-0 font-mono">#</span>
-              <input
-                type="text"
-                value={tags}
-                maxLength={300}
-                onChange={handleFieldChange(setTags)}
-                placeholder="tags, comma, separated"
-                className="flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-slate-300 placeholder:text-slate-600 outline-none transition focus:border-brand-500/50"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(false)}
+              className={`flex w-full items-center justify-center gap-2 rounded-lg border py-2 text-[11px] font-semibold transition ${light ? "border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"}`}
+            >
+              <X className="h-3.5 w-3.5" /> Close
+            </button>
           </div>
         </div>
       </div>

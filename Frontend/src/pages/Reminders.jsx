@@ -3,7 +3,6 @@ import { Bell, Clock, Calendar, AlertTriangle, Check } from "lucide-react";
 import toast from "react-hot-toast";
 import client from "../api/client";
 import Spinner from "../components/Spinner";
-import Navbar from "../components/Navbar";
 import CalendarComponent from "../components/Calendar";
 
 function fmtDateTime(iso) {
@@ -60,7 +59,6 @@ export default function Reminders() {
 
   return (
     <div className="min-h-screen">
-      <Navbar />
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 animate-fade-in">
         <header className="mb-8">
           <div className="flex items-center gap-3 mb-2">

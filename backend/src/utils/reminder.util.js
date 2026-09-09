@@ -67,6 +67,7 @@ export function startReminderCron() {
         reminderAt: { $lte: now },
         reminderSent: false,
         isDeleted: false,
+        isArchived: false,
       }).limit(50);
 
       for (const todo of dueTodos) {
@@ -75,6 +76,10 @@ export function startReminderCron() {
           await sendReminderEmail(user, todo);
         }
         todo.reminderSent = true;
+        todo.reminderSentAt = new Date();
+        todo.history = todo.history || [];
+        todo.history.push({ action: "reminder_sent", at: new Date(), detail: `Reminder email sent for ${new Date(todo.reminderAt).toISOString()}` });
+        if (todo.history.length > 200) todo.history = todo.history.slice(-200);
         await todo.save();
       }
     } catch (err) {

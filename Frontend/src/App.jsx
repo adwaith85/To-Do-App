@@ -5,15 +5,18 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
 import AdminProtectedRoute from "./components/AdminProtectedRoute";
 import AdminLayout from "./components/AdminLayout";
+import UserLayout from "./components/UserLayout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import VerifyOtp from "./pages/VerifyOtp";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
-import Todos from "./pages/Todos";
-import Reminders from "./pages/Reminders";
-import Profile from "./pages/Profile";
 import Spinner from "./components/Spinner";
+
+const Todos = lazy(() => import("./pages/Todos"));
+const Reminders = lazy(() => import("./pages/Reminders"));
+const Archives = lazy(() => import("./pages/Archives"));
+const Profile = lazy(() => import("./pages/Profile"));
 
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/Users"));
@@ -60,9 +63,12 @@ export default function App() {
           <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
 
           {/* Authenticated app */}
-          <Route path="/" element={<ProtectedRoute><Todos /></ProtectedRoute>} />
-          <Route path="/reminders" element={<ProtectedRoute><Reminders /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/" element={<ProtectedRoute><UserLayout /></ProtectedRoute>}>
+            <Route index element={<Todos />} />
+            <Route path="reminders" element={<Reminders />} />
+            <Route path="archives" element={<Archives />} />
+            <Route path="profile" element={<Profile />} />
+          </Route>
 
           {/* Admin panel */}
           <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
