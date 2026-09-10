@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { X, Pin, Bell, Palette, List, Archive, Trash2, Flag, Settings2 } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { X, Pin, Bell, Palette, List, Archive, Trash2, Flag, Settings2, Clock } from "lucide-react";
 import toast from "react-hot-toast";
 import client from "../api/client";
 import ThemePicker from "./ThemePicker";
@@ -21,6 +21,22 @@ const fmtFullDate = (iso) => {
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 };
+const fmtDateTime = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
+};
+
+const isEmptyTodo = (t) =>
+  !(t?.task || "").trim() &&
+  !(t?.description || "").trim() &&
+  !t?.dueDate &&
+  !t?.reminderAt &&
+  !(t?.tags || []).length &&
+  !(t?.attachments || []).length &&
+  !t?.isPinned &&
+  !t?.backgroundColor;
 
 export default function TodoForm({ open, onClose, editTodo = null, onSaved, onArchive, onDelete }) {
   const [form, setForm] = useState({
@@ -39,8 +55,49 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
   const [deleting, setDeleting] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const light = isWhiteTheme(form.backgroundColor);
+  const formRef = useRef(form);
+  formRef.current = form;
+  const dirty = useRef(false);
+  const saveTimer = useRef(null);
+
+  const update = (patch) => {
+    dirty.current = true;
+    setForm((f) => ({ ...f, ...patch }));
+  };
+
+  const saveNow = useCallback(async () => {
+    const f = formRef.current;
+    if (!editTodo?._id) return true;
+    try {
+      const fd = new FormData();
+      fd.append("task", f.task.trim());
+      fd.append("description", f.description.trim());
+      fd.append("priority", f.priority);
+      if (f.reminderAt) fd.append("reminderAt", f.reminderAt);
+      fd.append("isPinned", String(f.isPinned));
+      if (f.backgroundColor) fd.append("backgroundColor", f.backgroundColor);
+      const { data } = await client.patch(`/api/todos/${editTodo._id}`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const saved = data?.data;
+      if (saved && isEmptyTodo(saved)) {
+        client.delete(`/api/todos/${editTodo._id}`).catch(() => {});
+        dirty.current = false;
+        onDelete?.(editTodo._id);
+        onClose();
+        return true;
+      }
+      dirty.current = false;
+      onSaved?.(data.data);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [editTodo, onSaved, onDelete, onClose]);
 
   useEffect(() => {
+    clearTimeout(saveTimer.current);
+    dirty.current = false;
     if (editTodo) {
       setForm({
         task: editTodo.task || "",
@@ -56,6 +113,15 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
     setShowReminder(false);
   }, [editTodo, open]);
 
+  // Autosave: any change made in the form is saved automatically.
+  useEffect(() => {
+    if (!open) return undefined;
+    const id = setTimeout(() => {
+      if (dirty.current) saveNow();
+    }, 900);
+    return () => clearTimeout(id);
+  }, [form, open, saveNow]);
+
   useEffect(() => {
     if (open) setTimeout(() => titleRef.current?.focus(), 100);
   }, [open]);
@@ -64,29 +130,18 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.task.trim()) return toast.error("Title is required");
-
-    const fd = new FormData();
-    fd.append("task", form.task.trim());
-    fd.append("description", form.description.trim());
-    fd.append("priority", form.priority);
-    if (form.reminderAt) fd.append("reminderAt", form.reminderAt);
-    fd.append("isPinned", String(form.isPinned));
-    if (form.backgroundColor) fd.append("backgroundColor", form.backgroundColor);
-
+    clearTimeout(saveTimer.current);
     setBusy(true);
-    try {
-      const { data } = await client.patch(`/api/todos/${editTodo._id}`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      toast.success("Task updated");
-      onSaved?.(data.data);
-      onClose();
-    } catch (err) {
-      toast.error(err.response?.data?.message || "Could not update task");
-    } finally {
-      setBusy(false);
-    }
+    const ok = await saveNow();
+    setBusy(false);
+    if (!ok) return toast.error("Could not update task");
+    onClose();
+  };
+
+  const handleClose = () => {
+    clearTimeout(saveTimer.current);
+    if (dirty.current) saveNow();
+    onClose();
   };
 
   const handleArchive = async () => {
@@ -119,7 +174,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={handleClose} />
       <div
         className={`relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border bg-ink-900/95 backdrop-blur-xl shadow-2xl animate-slide-up ${light ? "border-slate-200" : "border-white/10"}`}
         style={form.backgroundColor ? { background: form.backgroundColor } : undefined}
@@ -127,7 +182,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
         {/* Header */}
         <div className={`sticky top-0 z-10 flex items-center justify-between border-b px-5 py-3.5 rounded-t-3xl ${light ? "border-slate-200 bg-white/90 backdrop-blur-xl" : "border-white/10 bg-ink-900/90 backdrop-blur-xl"}`}>
           <h2 className={`text-sm font-bold ${light ? "text-slate-900" : "text-white"}`}>Edit Task</h2>
-          <button onClick={onClose} className={`rounded-lg p-1.5 transition ${light ? "text-slate-500 hover:bg-slate-200 hover:text-slate-900" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>
+          <button onClick={handleClose} className={`rounded-lg p-1.5 transition ${light ? "text-slate-500 hover:bg-slate-200 hover:text-slate-900" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -140,7 +195,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
                 ref={titleRef}
                 type="text"
                 value={form.task}
-                onChange={(e) => setForm({ ...form, task: e.target.value })}
+                onChange={(e) => update({ task: e.target.value })}
                 placeholder="Title..."
                 maxLength={200}
                 className={`w-full rounded-xl border px-4 py-3.5 text-base font-semibold outline-none transition focus:ring-4 ${light ? "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-brand-500/15" : "border-white/10 bg-white/[0.04] text-white placeholder:text-slate-600 focus:border-brand-500/50 focus:bg-white/[0.06]"}`}
@@ -150,7 +205,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
                 <ListEditor
                   ref={listRef}
                   value={form.description}
-                  onChange={(v) => setForm((f) => ({ ...f, description: v }))}
+                  onChange={(v) => update({ description: v })}
                   placeholder="Write a description..."
                   light={light}
                 />
@@ -167,7 +222,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
               <div className="space-y-2">
                 <button
                   type="button"
-                  onClick={() => setForm((f) => ({ ...f, isPinned: !f.isPinned }))}
+                  onClick={() => update({ isPinned: !form.isPinned })}
                   className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all duration-200 ${
                     form.isPinned
                       ? light
@@ -222,7 +277,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
                 <div className={`mb-2 flex items-center gap-2 text-xs font-semibold ${light ? "text-slate-600" : "text-slate-400"}`}>
                   <Palette className="h-3.5 w-3.5" /> Theme
                 </div>
-                <ThemePicker value={form.backgroundColor} onChange={(v) => setForm((f) => ({ ...f, backgroundColor: v }))} />
+                <ThemePicker value={form.backgroundColor} onChange={(v) => update({ backgroundColor: v })} />
               </div>
 
               {/* Priority */}
@@ -232,7 +287,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
                 </div>
                 <select
                   value={form.priority}
-                  onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                  onChange={(e) => update({ priority: e.target.value })}
                   className={`w-full rounded-lg border px-2.5 py-2 text-xs outline-none transition focus:border-brand-500/50 cursor-pointer ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
                 >
                   <option value="low">Low</option>
@@ -247,16 +302,25 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
             <div className="mt-4">
               <ReminderPicker
                 value={form.reminderAt}
-                onChange={(v) => setForm((f) => ({ ...f, reminderAt: v }))}
+                onChange={(v) => update({ reminderAt: v })}
                 onDone={() => setShowReminder(false)}
               />
             </div>
           )}
 
           {/* Dates */}
-          <div className={`mt-5 border-t pt-4 text-[11px] leading-relaxed ${light ? "border-slate-200 text-slate-500" : "border-white/10 text-slate-500"}`}>
-            <p>Created on {fmtFullDate(editTodo?.createdAt)}</p>
-            <p className="mt-0.5">Last updated on {fmtFullDate(editTodo?.lastEditedAt || editTodo?.updatedAt || editTodo?.createdAt)}</p>
+          <div className={`mt-5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-4 text-[11px] ${light ? "border-slate-200 text-slate-500" : "border-white/10 text-slate-500"}`}>
+            <span>Created {fmtFullDate(editTodo?.createdAt)}</span>
+            <span aria-hidden>·</span>
+            <span>Updated {fmtFullDate(editTodo?.lastEditedAt || editTodo?.updatedAt || editTodo?.createdAt)}</span>
+            {editTodo?.reminderAt && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> Reminder {fmtDateTime(editTodo.reminderAt)}
+                </span>
+              </>
+            )}
           </div>
 
           {/* Actions */}
@@ -289,7 +353,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
             </button>
             <button
               type="submit"
-              disabled={busy || !form.task.trim()}
+              disabled={busy}
               className="btn-primary flex-1 py-2.5 text-sm"
             >
               {busy ? "Saving..." : "Update"}

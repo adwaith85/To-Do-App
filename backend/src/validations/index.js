@@ -11,6 +11,10 @@
 import { z } from "zod";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 
+/** Parse a boolean that may arrive as a real boolean or a multipart string. */
+const toBool = (v) =>
+  typeof v === "boolean" ? v : typeof v === "string" ? v === "true" || v === "1" : Boolean(v);
+
 /** Fallback country for numbers typed WITHOUT an international prefix. */
 const DEFAULT_PHONE_COUNTRY = "IN";
 
@@ -215,11 +219,7 @@ export const twoFactorSchema = z.object({
 /* ------------------------------------------------------------------ */
 
 export const createTodoSchema = z.object({
-  task: z
-    .string({ required_error: "Task text is required" })
-    .trim()
-    .min(1, "Task cannot be empty")
-    .max(200, "Task must be at most 200 characters"),
+  task: z.string().trim().max(200, "Task must be at most 200 characters").optional().default(""),
   description: z.string().trim().max(2000, "Description is too long").optional().default(""),
   priority: z.enum(["low", "medium", "high"]).optional().default("medium"),
   dueDate: z
@@ -235,7 +235,7 @@ export const createTodoSchema = z.object({
     .max(10, "At most 10 tags")
     .optional()
     .default([]),
-  isPinned: z.coerce.boolean().optional().default(false),
+  isPinned: z.preprocess(toBool, z.boolean()).optional().default(false),
   backgroundColor: z.string().max(100).optional().default(""),
   reminderAt: z
     .union([z.date(), z.string()])
@@ -248,7 +248,7 @@ export const createTodoSchema = z.object({
 });
 
 export const updateTodoSchema = z.object({
-  task: z.string().trim().min(1).max(200).optional(),
+  task: z.string().trim().max(200).optional(),
   description: z.string().trim().max(2000).optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
   dueDate: z
@@ -260,7 +260,7 @@ export const updateTodoSchema = z.object({
       return Number.isNaN(d.getTime()) ? null : d;
     }),
   tags: z.array(z.string().trim().min(1).max(30)).max(10).optional(),
-  isPinned: z.coerce.boolean().optional(),
+  isPinned: z.preprocess(toBool, z.boolean()).optional(),
   backgroundColor: z.string().max(100).optional(),
   status: z.enum(["pending", "in_progress", "completed"]).optional(),
   reminderAt: z

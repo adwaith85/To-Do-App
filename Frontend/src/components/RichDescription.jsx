@@ -31,7 +31,7 @@ export default function RichDescription({
   }
 
   const boxCls = (checked) =>
-    `mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-colors ${
+    `flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-colors ${
       checked
         ? "border-emerald-400 bg-emerald-500 text-white"
         : light
@@ -55,7 +55,7 @@ export default function RichDescription({
               {seg.items.map((it, j) => {
                 const idx = base + j;
                 return (
-                  <li key={idx} className="flex items-start gap-2">
+                  <li key={idx} className="flex items-center gap-2">
                     {onToggle ? (
                       <button
                         type="button"

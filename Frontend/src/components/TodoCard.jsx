@@ -27,7 +27,7 @@ function fmtDateTime(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-export default function TodoCard({ todo, onToggle, onToggleItem, onDelete, onArchive, onPin, onEdit, onDragStart, onDragOver, onDragEnd, completing = false, countdown = 0 }) {
+export default function TodoCard({ todo, onToggle, onDelete, onArchive, onPin, onEdit, onDragStart, onDragOver, onDragEnd, completing = false, countdown = 0 }) {
   const isCompleted = todo.status === "completed";
   const isPastDue = todo.reminderAt && new Date(todo.reminderAt) < new Date() && !isCompleted;
   const light = isWhiteTheme(todo.backgroundColor);
@@ -97,7 +97,6 @@ export default function TodoCard({ todo, onToggle, onToggleItem, onDelete, onArc
               light={light}
               textClass={light ? "text-slate-500" : "text-slate-400"}
               className="mt-1 max-h-40 overflow-y-auto pr-1 text-xs leading-relaxed no-scrollbar"
-              onToggle={(nextDescription) => onToggleItem?.(todo._id, nextDescription)}
             />
           )}
 

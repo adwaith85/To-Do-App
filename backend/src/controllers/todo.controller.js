@@ -19,6 +19,20 @@ function recordHistory(todo, action, detail = "") {
   }
 }
 
+/** A todo with no title, description, or any other content is an empty card. */
+function isEmptyTodo(todo) {
+  return (
+    !(todo.task || "").trim() &&
+    !(todo.description || "").trim() &&
+    !todo.dueDate &&
+    !todo.reminderAt &&
+    !(todo.tags || []).length &&
+    !(todo.attachments || []).length &&
+    !todo.isPinned &&
+    !todo.backgroundColor
+  );
+}
+
 export const getTodos = asyncHandler(async (req, res) => {
   const todos = await Todo.find({ user: req.user._id, isDeleted: false, isArchived: false, status: { $ne: "completed" } })
     .sort({ isPinned: -1, createdAt: -1 })
@@ -69,6 +83,19 @@ export const createTodo = asyncHandler(async (req, res) => {
     mimetype: f.mimetype,
     size: f.size,
   }));
+
+  if (isEmptyTodo({
+    task,
+    description: description || "",
+    dueDate: dueDate || null,
+    reminderAt: reminderAt || null,
+    tags: tags || [],
+    attachments,
+    isPinned: toBool(isPinned),
+    backgroundColor: backgroundColor || "",
+  })) {
+    throw ApiError.badRequest("Cannot create an empty todo.");
+  }
 
   const todo = await Todo.create({
     task,
@@ -151,6 +178,15 @@ export const updateTodo = asyncHandler(async (req, res) => {
     }));
     todo.attachments = [...(todo.attachments || []), ...newAttachments].slice(0, 5);
     changed.push("attachments");
+  }
+
+  if (isEmptyTodo(todo)) {
+    todo.isDeleted = true;
+    todo.deletedAt = new Date();
+    todo.lastEditedAt = new Date();
+    recordHistory(todo, "deleted", "Empty todo deleted automatically");
+    await todo.save();
+    return res.status(200).json({ success: true, message: "Empty task deleted.", data: todo });
   }
 
   if (changed.length > 0) {

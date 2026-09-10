@@ -24,8 +24,6 @@ export default function TodoCompose({ onCreated }) {
 
   const areaRef = useRef(null);
   const titleRef = useRef(null);
-  const saveTimer = useRef(null);
-  const hasTyped = useRef(false);
   const confirming = useRef(false);
   const listRef = useRef(null);
 
@@ -64,11 +62,20 @@ export default function TodoCompose({ onCreated }) {
 
   const doSave = useCallback(async () => {
     if (saving) return;
-    const text = title.trim();
-    if (!text && !savedId) return;
-    if (!text && savedId) {
-      try { await client.delete(`/api/todos/${savedId}`); } catch { /* ignore */ }
-      setSavedId(null);
+    const hasContent =
+      Boolean(title.trim()) ||
+      Boolean(description.trim()) ||
+      Boolean(dueDate) ||
+      Boolean(reminderAt) ||
+      isPinned ||
+      Boolean(theme) ||
+      Boolean(tags.trim()) ||
+      priority !== "medium";
+    if (!hasContent) {
+      if (savedId) {
+        try { await client.delete(`/api/todos/${savedId}`); } catch { /* ignore */ }
+        setSavedId(null);
+      }
       return;
     }
     setSaving(true);
@@ -92,23 +99,16 @@ export default function TodoCompose({ onCreated }) {
     } finally {
       setSaving(false);
     }
-  }, [title, savedId, saving, buildPayload, onCreated]);
+  }, [title, description, dueDate, reminderAt, isPinned, theme, tags, priority, savedId, saving, buildPayload, onCreated]);
 
-  const scheduleSave = useCallback(() => {
-    hasTyped.current = true;
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => doSave(), 1200);
-  }, [doSave]);
-
-  const handleTitleChange = (e) => { setTitle(e.target.value); scheduleSave(); };
-  const handleDescChange = useCallback((v) => { setDescription(v); scheduleSave(); }, [scheduleSave]);
-  const handleTheme = (v) => { setTheme(v); scheduleSave(); };
-  const handleTogglePin = () => { setIsPinned((p) => !p); setTimeout(() => scheduleSave(), 0); };
-  const handleReminder = (v) => { setReminderAt(v); scheduleSave(); };
+  const handleTitleChange = (e) => { setTitle(e.target.value); };
+  const handleDescChange = useCallback((v) => { setDescription(v); }, []);
+  const handleTheme = (v) => { setTheme(v); };
+  const handleTogglePin = () => { setIsPinned((p) => !p); };
+  const handleReminder = (v) => { setReminderAt(v); };
 
   const handleConfirm = () => {
     confirming.current = true;
-    clearTimeout(saveTimer.current);
     doSave();
     collapse();
     setTimeout(() => { confirming.current = false; }, 50);
@@ -118,15 +118,13 @@ export default function TodoCompose({ onCreated }) {
     setOpen(false); setMenuOpen(false); setShowReminder(false);
     setTitle(""); setDescription(""); setPriority("medium"); setDueDate("");
     setReminderAt(""); setIsPinned(false); setTheme(""); setTags("");
-    setSavedId(null); hasTyped.current = false;
+    setSavedId(null);
   };
 
   const handleBlur = (e) => {
     if (confirming.current) return;
     if (areaRef.current && !areaRef.current.contains(e.relatedTarget)) {
-      clearTimeout(saveTimer.current);
-      if (hasTyped.current) doSave();
-      else if (savedId) { client.delete(`/api/todos/${savedId}`).catch(() => {}); setSavedId(null); }
+      doSave();
       collapse();
     }
   };
@@ -282,7 +280,7 @@ export default function TodoCompose({ onCreated }) {
               <span className="ml-2 text-[11px] text-slate-500">{isPinned ? "Pinned to top" : "Pin to top"}</span>
             </div>
 
-            {/* Add list — starts list mode in the description */}
+            {/* Add list — inserts a checklist item in the description */}
             <div>
               <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-slate-400">
                 <List className="h-3.5 w-3.5" /> Add list
@@ -295,7 +293,7 @@ export default function TodoCompose({ onCreated }) {
                 <List className="h-3.5 w-3.5" /> Start a list in the description
               </button>
               <p className={`mt-1.5 text-[10px] leading-relaxed ${light ? "text-slate-500" : "text-slate-600"}`}>
-                In list mode, press <span className={light ? "text-slate-700" : "text-slate-400"}>Enter</span> for the next item and <span className={light ? "text-slate-700" : "text-slate-400"}>Enter twice</span> to finish and continue as a paragraph.
+                Typing is just like a note: lines keep the exact order you write them. In a list, press <span className={light ? "text-slate-700" : "text-slate-400"}>Enter</span> for the next item and <span className={light ? "text-slate-700" : "text-slate-400"}>Enter twice</span> to finish and continue as a paragraph.
               </p>
             </div>
 

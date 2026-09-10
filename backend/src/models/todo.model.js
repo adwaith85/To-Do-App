@@ -14,10 +14,9 @@ const todoSchema = new mongoose.Schema(
     },
     task: {
       type: String,
-      required: [true, "Task text is required"],
       trim: true,
-      minlength: [1, "Task cannot be empty"],
       maxlength: [200, "Task must be at most 200 characters"],
+      default: "",
     },
     title: {
       type: String,

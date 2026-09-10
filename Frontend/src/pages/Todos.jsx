@@ -101,15 +101,6 @@ export default function Todos() {
     }
   };
 
-  const toggleTodoItem = async (id, description) => {
-    try {
-      const { data } = await client.patch(`/api/todos/${id}`, { description });
-      setTodos((prev) => prev?.map((t) => (t._id === id ? data.data : t)));
-    } catch {
-      toast.error("Could not update the list item");
-    }
-  };
-
   const onComposed = useCallback((todo, isUpdate) => {
     setTodos((prev) => {
       if (!prev) return prev;
@@ -120,13 +111,8 @@ export default function Todos() {
   }, []);
 
   const onSaved = useCallback((todo) => {
-    if (editTodo) {
-      setTodos((prev) => prev?.map((t) => (t._id === todo._id ? todo : t)));
-    } else {
-      setTodos((prev) => (prev ? [todo, ...prev] : prev));
-    }
-    setEditTodo(null);
-  }, [editTodo]);
+    setTodos((prev) => prev?.map((t) => (t._id === todo._id ? todo : t)));
+  }, []);
 
   const onArchiveFromForm = useCallback((todo) => {
     setTodos((prev) => prev?.filter((t) => t._id !== todo._id));
@@ -197,7 +183,6 @@ export default function Todos() {
                 key={todo._id}
                 todo={todo}
                 onToggle={toggleTodo}
-                onToggleItem={toggleTodoItem}
                 onDelete={() => setConfirmId(todo._id)}
                 onArchive={archiveTodo}
                 onPin={pinTodo}
@@ -214,7 +199,6 @@ export default function Todos() {
                 key={todo._id}
                 todo={todo}
                 onToggle={toggleTodo}
-                onToggleItem={toggleTodoItem}
                 onDelete={() => setConfirmId(todo._id)}
                 onArchive={archiveTodo}
                 onPin={pinTodo}
