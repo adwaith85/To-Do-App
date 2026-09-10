@@ -20,8 +20,15 @@ function recordHistory(todo, action, detail = "") {
 }
 
 export const getTodos = asyncHandler(async (req, res) => {
-  const todos = await Todo.find({ user: req.user._id, isDeleted: false, isArchived: false })
-    .sort({ isPinned: -1, order: 1, createdAt: -1 })
+  const todos = await Todo.find({ user: req.user._id, isDeleted: false, isArchived: false, status: { $ne: "completed" } })
+    .sort({ isPinned: -1, createdAt: -1 })
+    .maxTimeMS(10_000);
+  res.status(200).json({ success: true, data: todos });
+});
+
+export const getCompletedTodos = asyncHandler(async (req, res) => {
+  const todos = await Todo.find({ user: req.user._id, isDeleted: false, isArchived: false, status: "completed" })
+    .sort({ completedAt: -1, createdAt: -1 })
     .maxTimeMS(10_000);
   res.status(200).json({ success: true, data: todos });
 });
@@ -192,7 +199,7 @@ export const reorderTodos = asyncHandler(async (req, res) => {
   await Promise.all(ops);
 
   const todos = await Todo.find({ user: req.user._id, isDeleted: false, isArchived: false })
-    .sort({ isPinned: -1, order: 1, createdAt: -1 });
+    .sort({ isPinned: -1, createdAt: -1 });
   res.status(200).json({ success: true, data: todos });
 });
 

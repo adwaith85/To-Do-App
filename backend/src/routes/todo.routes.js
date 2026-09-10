@@ -5,6 +5,7 @@ import { sanitize } from "../middleware/sanitize.middleware.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import {
   getTodos,
+  getCompletedTodos,
   getArchivedTodos,
   getReminders,
   createTodo,
@@ -31,6 +32,7 @@ const upload = multer({
 });
 
 router.get("/", getTodos);
+router.get("/completed", getCompletedTodos);
 router.get("/reminders", getReminders);
 router.get("/archived", getArchivedTodos);
 router.post("/", upload.array("files", 5), sanitize, validate({ body: createTodoSchema }), createTodo);

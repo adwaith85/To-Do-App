@@ -1,4 +1,4 @@
-import { Pin, Calendar, Clock, Paperclip, Check, Archive, Trash2 } from "lucide-react";
+import { Pin, Calendar, Clock, Paperclip, Check, Archive, Trash2, History, Loader2 } from "lucide-react";
 import { isWhiteTheme } from "../utils/theme";
 import RichDescription from "./RichDescription";
 
@@ -18,7 +18,7 @@ function fmtDate(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function fmtDateTime(iso) {
@@ -27,10 +27,14 @@ function fmtDateTime(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-export default function TodoCard({ todo, onToggle, onToggleItem, onDelete, onArchive, onPin, onEdit, onDragStart, onDragOver, onDragEnd }) {
+export default function TodoCard({ todo, onToggle, onToggleItem, onDelete, onArchive, onPin, onEdit, onDragStart, onDragOver, onDragEnd, completing = false, countdown = 0 }) {
   const isCompleted = todo.status === "completed";
   const isPastDue = todo.reminderAt && new Date(todo.reminderAt) < new Date() && !isCompleted;
   const light = isWhiteTheme(todo.backgroundColor);
+
+  const updatedAt = todo.lastEditedAt || todo.updatedAt;
+  const showUpdated = Boolean(updatedAt && todo.createdAt && new Date(updatedAt).getTime() !== new Date(todo.createdAt).getTime());
+  const metaDate = showUpdated ? updatedAt : todo.createdAt;
 
   return (
     <div
@@ -69,15 +73,16 @@ export default function TodoCard({ todo, onToggle, onToggleItem, onDelete, onArc
         {/* Checkbox */}
         <button
           onClick={() => onToggle(todo._id)}
-          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-all duration-200 ${
+          aria-label={isCompleted ? "Mark task not done" : "Mark task done"}
+          className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-2 transition-all duration-200 sm:h-5 sm:w-5 sm:rounded-md ${
             isCompleted ? "border-emerald-400 bg-emerald-400 text-white" : light ? "border-slate-300 hover:border-brand-500" : "border-white/20 hover:border-brand-400"
           }`}
         >
-          {isCompleted && <Check className="h-3 w-3" />}
+          {isCompleted && <Check className="h-3.5 w-3.5 sm:h-3 sm:w-3" />}
         </button>
 
         {/* Content */}
-        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onEdit(todo)}>
+        <div className={`min-w-0 flex-1 cursor-pointer ${todo.isPinned ? "pr-6" : ""}`} onClick={() => onEdit(todo)}>
           <span
             className={`block break-words text-sm font-semibold transition ${
               isCompleted ? "text-slate-400 line-through" : light ? "text-slate-900" : "text-slate-100"
@@ -91,7 +96,7 @@ export default function TodoCard({ todo, onToggle, onToggleItem, onDelete, onArc
               description={todo.description}
               light={light}
               textClass={light ? "text-slate-500" : "text-slate-400"}
-              className="mt-1 max-h-40 overflow-y-auto pr-1 text-xs leading-relaxed [scrollbar-width:thin]"
+              className="mt-1 max-h-40 overflow-y-auto pr-1 text-xs leading-relaxed no-scrollbar"
               onToggle={(nextDescription) => onToggleItem?.(todo._id, nextDescription)}
             />
           )}
@@ -105,11 +110,6 @@ export default function TodoCard({ todo, onToggle, onToggleItem, onDelete, onArc
             {todo.dueDate && (
               <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${light ? "border-slate-200 bg-slate-100 text-slate-600" : "border-white/10 bg-white/5 text-slate-400"}`}>
                 <Calendar className="h-2.5 w-2.5" /> {fmtDate(todo.dueDate)}
-              </span>
-            )}
-            {todo.reminderAt && (
-              <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${isPastDue ? (light ? "border-slate-300 bg-slate-100 text-slate-500" : "border-slate-400/20 bg-slate-400/10 text-slate-500") : light ? "border-accent-500/30 bg-accent-500/10 text-accent-600" : "border-accent-400/30 bg-accent-400/10 text-accent-400"}`}>
-                <Clock className="h-2.5 w-2.5" /> {fmtDateTime(todo.reminderAt)}
               </span>
             )}
             {(todo.tags || []).map((t) => (
@@ -126,33 +126,57 @@ export default function TodoCard({ todo, onToggle, onToggleItem, onDelete, onArc
         </div>
       </div>
 
-      {/* Action bar — always visible on touch, hover-revealed on desktop */}
-      <div className={`mt-3 flex items-center justify-end gap-1 border-t pt-2.5 opacity-100 transition-opacity duration-200 lg:opacity-0 lg:group-hover/article:opacity-100 lg:focus-within:opacity-100 ${light ? "border-slate-200" : "border-white/5"}`}>
-        <button
-          onClick={(e) => { e.stopPropagation(); onPin?.(todo); }}
-          title={todo.isPinned ? "Unpin from top" : "Pin to top"}
-          className={`flex h-7 w-7 items-center justify-center rounded-lg transition ${
-            todo.isPinned
-              ? light ? "bg-brand-500/10 text-brand-600" : "bg-brand-500/20 text-brand-300"
-              : light ? "text-slate-400 hover:bg-brand-500/10 hover:text-brand-600" : "text-slate-500 hover:bg-brand-500/15 hover:text-brand-300"
-          }`}
-        >
-          <Pin className={`h-3.5 w-3.5 transition-transform ${todo.isPinned ? "rotate-45" : ""}`} />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onArchive?.(todo); }}
-          title="Archive"
-          className={`flex h-7 w-7 items-center justify-center rounded-lg transition ${light ? "text-slate-400 hover:bg-amber-500/10 hover:text-amber-600" : "text-slate-500 hover:bg-amber-500/15 hover:text-amber-300"}`}
-        >
-          <Archive className="h-3.5 w-3.5" />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(todo._id); }}
-          title="Delete"
-          className={`flex h-7 w-7 items-center justify-center rounded-lg transition ${light ? "text-slate-400 hover:bg-rose-500/10 hover:text-rose-600" : "text-slate-500 hover:bg-rose-500/15 hover:text-rose-300"}`}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+      {/* Bottom bar — stacks on mobile, single row on desktop */}
+      <div className={`mt-3 flex flex-col gap-2.5 border-t pt-2.5 sm:flex-row sm:items-center sm:justify-between ${light ? "border-slate-200" : "border-white/5"}`}>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-500">
+          {completing ? (
+            <span className="inline-flex items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 font-semibold text-emerald-400">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Moving to Completed in {countdown}s
+            </span>
+          ) : (
+            <>
+              <span className="inline-flex items-center gap-1">
+                <History className="h-3 w-3" />
+                {showUpdated ? "Updated" : "Created"} {fmtDate(metaDate)}
+              </span>
+              {todo.reminderAt && (
+                <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${isPastDue ? (light ? "border-slate-300 bg-slate-100 text-slate-500" : "border-slate-400/20 bg-slate-400/10 text-slate-500") : light ? "border-accent-500/30 bg-accent-500/10 text-accent-600" : "border-accent-400/30 bg-accent-400/10 text-accent-400"}`}>
+                  <Clock className="h-2.5 w-2.5" /> {fmtDateTime(todo.reminderAt)}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Actions — equal-width icon buttons on mobile, compact icons on desktop */}
+        <div className="flex w-full shrink-0 items-stretch gap-1.5 sm:w-auto sm:items-center sm:gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); onPin?.(todo); }}
+            title={todo.isPinned ? "Unpin from top" : "Pin to top"}
+            className={`flex flex-1 items-center justify-center rounded-lg border py-2 transition sm:h-7 sm:w-7 sm:flex-none sm:px-0 sm:py-0 sm:rounded-lg ${
+              todo.isPinned
+                ? light ? "border-brand-500/30 bg-brand-500/10 text-brand-600" : "border-brand-400/40 bg-brand-500/20 text-brand-300"
+                : light ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-brand-500/40 hover:text-brand-600" : "border-white/10 bg-white/5 text-slate-400 hover:border-brand-400/40 hover:text-brand-300"
+            }`}
+          >
+            <Pin className={`h-4 w-4 transition-transform sm:h-3.5 sm:w-3.5 ${todo.isPinned ? "rotate-45" : ""}`} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onArchive?.(todo); }}
+            title="Archive"
+            className={`flex flex-1 items-center justify-center rounded-lg border py-2 transition sm:h-7 sm:w-7 sm:flex-none sm:px-0 sm:py-0 sm:rounded-lg ${light ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-amber-500/40 hover:text-amber-600" : "border-white/10 bg-white/5 text-slate-400 hover:border-amber-400/40 hover:text-amber-300"}`}
+          >
+            <Archive className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(todo._id); }}
+            title="Delete"
+            className={`flex flex-1 items-center justify-center rounded-lg border py-2 transition sm:h-7 sm:w-7 sm:flex-none sm:px-0 sm:py-0 sm:rounded-lg ${light ? "border-slate-200 bg-slate-100 text-slate-600 hover:border-rose-500/40 hover:text-rose-600" : "border-white/10 bg-white/5 text-slate-400 hover:border-rose-400/40 hover:text-rose-300"}`}
+          >
+            <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

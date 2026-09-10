@@ -16,6 +16,7 @@ import Spinner from "./components/Spinner";
 const Todos = lazy(() => import("./pages/Todos"));
 const Reminders = lazy(() => import("./pages/Reminders"));
 const Archives = lazy(() => import("./pages/Archives"));
+const Completed = lazy(() => import("./pages/Completed"));
 const Profile = lazy(() => import("./pages/Profile"));
 
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
@@ -67,6 +68,7 @@ export default function App() {
             <Route index element={<Todos />} />
             <Route path="reminders" element={<Reminders />} />
             <Route path="archives" element={<Archives />} />
+            <Route path="completed" element={<Completed />} />
             <Route path="profile" element={<Profile />} />
           </Route>
 

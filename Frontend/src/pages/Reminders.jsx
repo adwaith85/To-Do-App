@@ -22,9 +22,11 @@ export default function Reminders() {
 
   useEffect(() => {
     let cancelled = false;
-    client
-      .get("/api/todos")
-      .then(({ data }) => !cancelled && setTodos(data.data || []))
+    Promise.all([client.get("/api/todos"), client.get("/api/todos/completed")])
+      .then(([active, completed]) => {
+        if (cancelled) return;
+        setTodos([...(active.data.data || []), ...(completed.data.data || [])]);
+      })
       .catch(() => !cancelled && setTodos([]));
     return () => { cancelled = true; };
   }, []);

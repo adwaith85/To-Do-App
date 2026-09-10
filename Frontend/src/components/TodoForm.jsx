@@ -1,24 +1,25 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Pin, Bell, Palette, List, Archive, Trash2, Calendar, Flag, Settings2 } from "lucide-react";
+import { X, Pin, Bell, Palette, List, Archive, Trash2, Flag, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import client from "../api/client";
 import ThemePicker from "./ThemePicker";
 import ReminderPicker from "./ReminderPicker";
 import ListEditor from "./ListEditor";
+import ConfirmDialog from "./ConfirmDialog";
 import { isWhiteTheme } from "../utils/theme";
 
 const pad = (n) => String(n).padStart(2, "0");
-const toLocalDate = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
 const toLocalDateTime = (iso) => {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const fmtFullDate = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 };
 
 export default function TodoForm({ open, onClose, editTodo = null, onSaved, onArchive, onDelete }) {
@@ -26,8 +27,6 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
     task: "",
     description: "",
     priority: "medium",
-    dueDate: "",
-    tags: "",
     isPinned: false,
     reminderAt: "",
     backgroundColor: "",
@@ -38,6 +37,7 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
   const listRef = useRef(null);
   const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const light = isWhiteTheme(form.backgroundColor);
 
   useEffect(() => {
@@ -46,14 +46,12 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
         task: editTodo.task || "",
         description: editTodo.description || "",
         priority: editTodo.priority || "medium",
-        dueDate: toLocalDate(editTodo.dueDate),
-        tags: (editTodo.tags || []).join(", "),
         isPinned: editTodo.isPinned || false,
         reminderAt: toLocalDateTime(editTodo.reminderAt),
         backgroundColor: editTodo.backgroundColor || "",
       });
     } else {
-      setForm({ task: "", description: "", priority: "medium", dueDate: "", tags: "", isPinned: false, reminderAt: "", backgroundColor: "" });
+      setForm({ task: "", description: "", priority: "medium", isPinned: false, reminderAt: "", backgroundColor: "" });
     }
     setShowReminder(false);
   }, [editTodo, open]);
@@ -72,11 +70,9 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
     fd.append("task", form.task.trim());
     fd.append("description", form.description.trim());
     fd.append("priority", form.priority);
-    if (form.dueDate) fd.append("dueDate", form.dueDate);
     if (form.reminderAt) fd.append("reminderAt", form.reminderAt);
     fd.append("isPinned", String(form.isPinned));
     if (form.backgroundColor) fd.append("backgroundColor", form.backgroundColor);
-    form.tags.split(",").map((t) => t.trim()).filter(Boolean).forEach((t) => fd.append("tags", t));
 
     setBusy(true);
     try {
@@ -229,48 +225,20 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
                 <ThemePicker value={form.backgroundColor} onChange={(v) => setForm((f) => ({ ...f, backgroundColor: v }))} />
               </div>
 
-              {/* Priority + Due date */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <div className={`mb-1.5 flex items-center gap-2 text-xs font-semibold ${light ? "text-slate-600" : "text-slate-400"}`}>
-                    <Flag className="h-3.5 w-3.5" /> Priority
-                  </div>
-                  <select
-                    value={form.priority}
-                    onChange={(e) => setForm({ ...form, priority: e.target.value })}
-                    className={`w-full rounded-lg border px-2.5 py-2 text-xs outline-none transition focus:border-brand-500/50 cursor-pointer ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-                <div>
-                  <div className={`mb-1.5 flex items-center gap-2 text-xs font-semibold ${light ? "text-slate-600" : "text-slate-400"}`}>
-                    <Calendar className="h-3.5 w-3.5" /> Due date
-                  </div>
-                  <input
-                    type="date"
-                    value={form.dueDate}
-                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                    className={`w-full rounded-lg border px-2.5 py-2 text-xs outline-none transition focus:border-brand-500/50 ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
-                  />
-                </div>
-              </div>
-
-              {/* Tags */}
+              {/* Priority */}
               <div>
                 <div className={`mb-1.5 flex items-center gap-2 text-xs font-semibold ${light ? "text-slate-600" : "text-slate-400"}`}>
-                  <List className="h-3.5 w-3.5" /> Tags
+                  <Flag className="h-3.5 w-3.5" /> Priority
                 </div>
-                <input
-                  type="text"
-                  value={form.tags}
-                  maxLength={300}
-                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                  placeholder="comma separated"
-                  className={`w-full rounded-lg border px-3 py-2 text-xs outline-none transition focus:border-brand-500/50 ${light ? "border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400" : "border-white/10 bg-white/[0.03] text-slate-300 placeholder:text-slate-600"}`}
-                />
+                <select
+                  value={form.priority}
+                  onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                  className={`w-full rounded-lg border px-2.5 py-2 text-xs outline-none transition focus:border-brand-500/50 cursor-pointer ${light ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
               </div>
             </div>
           </div>
@@ -285,11 +253,17 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
             </div>
           )}
 
+          {/* Dates */}
+          <div className={`mt-5 border-t pt-4 text-[11px] leading-relaxed ${light ? "border-slate-200 text-slate-500" : "border-white/10 text-slate-500"}`}>
+            <p>Created on {fmtFullDate(editTodo?.createdAt)}</p>
+            <p className="mt-0.5">Last updated on {fmtFullDate(editTodo?.lastEditedAt || editTodo?.updatedAt || editTodo?.createdAt)}</p>
+          </div>
+
           {/* Actions */}
-          <div className="mt-5 flex gap-3">
+          <div className="mt-4 flex gap-3">
             <button
               type="button"
-              onClick={handleRemove}
+              onClick={() => setShowConfirmDelete(true)}
               disabled={deleting}
               className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition disabled:opacity-60 ${light ? "border-rose-500/30 bg-rose-500/10 text-rose-600 hover:bg-rose-500/15" : "border-rose-400/30 bg-rose-400/10 text-rose-300 hover:bg-rose-400/20"}`}
               title="Delete task"
@@ -323,6 +297,16 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
           </div>
         </form>
       </div>
+
+      <ConfirmDialog
+        open={showConfirmDelete}
+        title="Delete task?"
+        message={`"${editTodo?.task?.slice(0, 60) || "This task"}" will be permanently deleted. This cannot be undone.`}
+        confirmLabel="Delete"
+        loading={deleting}
+        onCancel={() => setShowConfirmDelete(false)}
+        onConfirm={() => { setShowConfirmDelete(false); handleRemove(); }}
+      />
     </div>
   );
 }

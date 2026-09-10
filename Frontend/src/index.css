@@ -180,6 +180,15 @@
   @apply bg-white/20;
 }
 
+/* Hide scrollbars on scrollable inner content (cards, descriptions) */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Smooth page transitions */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }

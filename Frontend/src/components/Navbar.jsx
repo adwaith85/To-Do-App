@@ -2,10 +2,12 @@ import { useState, useEffect } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Home, Bell, User, LogOut, Menu, X, CheckCircle, Archive } from "lucide-react";
 import { useAuth } from "../context/useAuth";
+import ConfirmDialog from "./ConfirmDialog";
 
 const NAV = [
   { to: "/", icon: Home, label: "Home" },
   { to: "/reminders", icon: Bell, label: "Reminders" },
+  { to: "/completed", icon: CheckCircle, label: "Completed" },
   { to: "/archives", icon: Archive, label: "Archives" },
   { to: "/profile", icon: User, label: "Profile" },
 ];
@@ -15,6 +17,7 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDrawerOpen(false), 0);
@@ -22,6 +25,7 @@ export default function Navbar() {
   }, [location.pathname]);
 
   const signOut = async () => {
+    setConfirmLogout(false);
     await logout();
     navigate("/login", { replace: true });
   };
@@ -63,7 +67,7 @@ export default function Navbar() {
               <p className="text-xs font-semibold text-slate-300">{user?.name || "User"}</p>
               <p className="text-[10px] text-slate-500">{user?.email}</p>
             </div>
-            <button onClick={signOut} className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-500/15 hover:text-rose-300" title="Log out">
+            <button onClick={() => setConfirmLogout(true)} className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-500/15 hover:text-rose-300" title="Log out">
               <LogOut className="h-4 w-4" />
             </button>
           </div>
@@ -123,13 +127,22 @@ export default function Navbar() {
                   <p className="truncate text-[11px] text-slate-500">{user?.email}</p>
                 </div>
               </div>
-              <button onClick={signOut} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-300">
+              <button onClick={() => setConfirmLogout(true)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-300">
                 <LogOut className="h-3.5 w-3.5" /> Log out
               </button>
             </div>
           </aside>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Log out?"
+        message="You will be signed out of your current session."
+        confirmLabel="Log out"
+        onCancel={() => setConfirmLogout(false)}
+        onConfirm={signOut}
+      />
     </>
   );
 }
