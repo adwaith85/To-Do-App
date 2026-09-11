@@ -190,7 +190,7 @@ page as everyone else, and that page **looks purely like a todo app's**:
 Promotion is done directly in MongoDB (no helper script ships in the repo):
 
 1. Find the user in MongoDB (Compass/shell). Set `role: "admin"`.
-2. Create a bcrypt hash of the code you'll give them (6-digit or
+2. Create a bcrypt hash of the code you'll give them (
    `ADM-XXXX-XXXX`), e.g. from `backend/`:
    ```bash
    node -e "const b=require('bcryptjs');console.log(b.hashSync('ADM-MY-CODE',12))"
