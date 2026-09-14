@@ -11,7 +11,8 @@
  *  - expiresAt TTL removes stale codes automatically
  */
 import mongoose from "mongoose";
-import { env } from "../config/env.js";
+
+const OTP_MAX_ATTEMPTS = parseInt(process.env.OTP_MAX_ATTEMPTS || "5", 10);
 
 // "email"/"phone" are the legacy labels used by otp.service; the canonical
 // spec names "email_verify"/"phone_verify" are accepted as well.
@@ -74,7 +75,7 @@ otpSchema.methods.isExpired = function () {
 };
 
 otpSchema.methods.isLocked = function () {
-  return this.attempts >= env.otp.maxAttempts;
+  return this.attempts >= OTP_MAX_ATTEMPTS;
 };
 
 const Otp = mongoose.model("Otp", otpSchema);

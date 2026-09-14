@@ -23,7 +23,8 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { getClientIp, getDevice } from "../utils/history.util.js";
 import { logAdminAction } from "../utils/adminAudit.util.js";
-import { env } from "../config/env.js";
+
+const LOCK_MINUTES = parseInt(process.env.LOCK_TIME_MINUTES || "60", 10);
 
 /**
  * Legacy RBAC demo (mounted at /api/auth/admin/ping). Returns the current
@@ -202,7 +203,7 @@ export const getUserDetail = asyncHandler(async (req, res) => {
 /** PATCH /api/admin/users/:id/lock — manually apply a lockout. */
 export const lockUser = asyncHandler(async (req, res) => {
   const user = await findUserOr404(req.params.id);
-  user.lockUntil = new Date(Date.now() + env.lockout.lockMinutes * 60_000);
+  user.lockUntil = new Date(Date.now() + LOCK_MINUTES * 60_000);
   await user.save();
 
   // Revoke all sessions so the lock is immediate everywhere.
@@ -210,7 +211,7 @@ export const lockUser = asyncHandler(async (req, res) => {
 
   await logAdminAction({
     adminId: req.user._id, action: "lock_user", targetType: "User",
-    targetId: user._id, details: { lockMinutes: env.lockout.lockMinutes }, req,
+    targetId: user._id, details: { lockMinutes: LOCK_MINUTES }, req,
   });
 
   res.status(200).json({ success: true, message: "Account locked.", data: { user: adminUserView(user) } });

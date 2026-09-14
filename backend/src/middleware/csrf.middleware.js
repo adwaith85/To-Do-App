@@ -14,18 +14,21 @@
  * requireCsrf guards only the cookie-trusting routes above.
  */
 import crypto from "crypto";
-import { env } from "../config/env.js";
 import { ApiError } from "../utils/ApiError.js";
+
+const CSRF_TOKEN_NAME = process.env.CSRF_COOKIE_NAME || "csrfToken";
+const COOKIE_SAMESITE = process.env.COOKIE_SAMESITE || "lax";
+const isProd = process.env.NODE_ENV === "production";
 
 /** Give every visitor a readable CSRF token if they don't have one yet. */
 export function ensureCsrfCookie(req, res, next) {
-  const name = env.cookies.csrfTokenName;
+  const name = CSRF_TOKEN_NAME;
 
   if (!req.cookies?.[name]) {
     res.cookie(name, crypto.randomBytes(24).toString("hex"), {
       httpOnly: false, // must be readable by our own JS to echo it back
-      secure: env.isProd,
-      sameSite: env.cookies.sameSite,
+      secure: isProd,
+      sameSite: COOKIE_SAMESITE,
       path: "/", // readable on any page of the SPA
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -35,7 +38,7 @@ export function ensureCsrfCookie(req, res, next) {
 
 /** Verify header echo for endpoints that authenticate via cookie alone. */
 export function requireCsrf(req, _res, next) {
-  const name = env.cookies.csrfTokenName;
+  const name = CSRF_TOKEN_NAME;
   const cookieToken = req.cookies?.[name];
   const headerToken = req.headers["x-csrf-token"];
 

@@ -8,15 +8,21 @@
  * without an inbox. The dev shortcut is disabled in production.
  */
 import nodemailer from "nodemailer";
-import { env } from "../config/env.js";
+
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
+const MAIL_FROM = process.env.MAIL_FROM || "Secure Todo <no-reply@todoapp.local>";
+const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES || "10", 10);
 
 const transporter =
-  env.smtp.host && env.smtp.user
+  SMTP_HOST && SMTP_USER
     ? nodemailer.createTransport({
-        host: env.smtp.host,
-        port: env.smtp.port,
-        secure: env.smtp.port === 465, // true for implicit TLS (port 465)
-        auth: { user: env.smtp.user, pass: env.smtp.pass },
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465, // true for implicit TLS (port 465)
+        auth: { user: SMTP_USER, pass: SMTP_PASS },
       })
     : null;
 
@@ -37,7 +43,7 @@ export async function sendOtpEmail(to, code, purposeLabel = "verify your email")
   const text = [
     `Your verification code is: ${code}`,
     ``,
-    `This code expires in ${env.otp.expiryMinutes} minutes.`,
+    `This code expires in ${OTP_EXPIRY_MINUTES} minutes.`,
     `If you didn't request this, you can safely ignore this email.`,
   ].join("\n");
 
@@ -46,7 +52,7 @@ export async function sendOtpEmail(to, code, purposeLabel = "verify your email")
       <h2 style="color:#4f46e5;margin-top:0">Secure Todo App</h2>
       <p>Use the code below to ${purposeLabel}:</p>
       <div style="font-size:32px;letter-spacing:10px;font-weight:700;color:#4f46e5;text-align:center;padding:16px;background:#eef2ff;border-radius:8px">${code}</div>
-      <p style="color:#64748b;font-size:14px">This code expires in ${env.otp.expiryMinutes} minutes.
+      <p style="color:#64748b;font-size:14px">This code expires in ${OTP_EXPIRY_MINUTES} minutes.
       If you didn't request this, you can safely ignore this email.</p>
     </div>`;
 
@@ -56,7 +62,7 @@ export async function sendOtpEmail(to, code, purposeLabel = "verify your email")
   }
 
   await transporter.sendMail({
-    from: env.smtp.from,
+    from: MAIL_FROM,
     to,
     subject,
     text,
@@ -103,7 +109,7 @@ export async function sendNewLoginAlert(to, { ip, device, when }) {
     </div>`;
 
   try {
-    await transporter.sendMail({ from: env.smtp.from, to, subject, text, html });
+    await transporter.sendMail({ from: MAIL_FROM, to, subject, text, html });
     return { delivered: true };
   } catch (error) {
     console.error("[mail] New-login alert failed:", error.message);

@@ -10,7 +10,6 @@
  */
 import User from "../models/user.model.js";
 import LoginHistory from "../models/loginHistory.model.js";
-import { env } from "../config/env.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { verifyPassword } from "../utils/password.util.js";
@@ -40,6 +39,8 @@ import {
   signSignupToken,
   verifySignupToken,
 } from "../utils/jwt.util.js";
+
+const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES || "10", 10);
 
 /* ------------------------------------------------------------------ */
 /* POST /api/auth/register                                             */
@@ -80,7 +81,7 @@ export const register = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     message: delivered
-      ? `Account created. A verification code was sent to ${email} — it expires in ${env.otp.expiryMinutes} minutes.`
+      ? `Account created. A verification code was sent to ${email} — it expires in ${OTP_EXPIRY_MINUTES} minutes.`
       : "Account created — the email could not be sent right now, use resend.",
     data: { email },
     // Dev-only convenience when SMTP isn't configured (never in production).
@@ -406,7 +407,7 @@ export const login = asyncHandler(async (req, res) => {
     const maskedEmail = user.email.replace(/^(.).*(@.*)$/, "$1*****$2");
     return res.status(200).json({
       success: true,
-      message: `We emailed a sign-in code to ${maskedEmail}. It expires in ${env.otp.expiryMinutes} minutes.`,
+      message: `We emailed a sign-in code to ${maskedEmail}. It expires in ${OTP_EXPIRY_MINUTES} minutes.`,
       data: { twoFactorRequired: true, pendingToken, role: effectiveRole },
       ...(devCode && { devOtp: devCode }), // dev-only fallback (SMTP off)
     });

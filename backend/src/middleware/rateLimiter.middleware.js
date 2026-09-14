@@ -10,9 +10,17 @@
  * match the production policy.
  */
 import rateLimit from "express-rate-limit";
-import { env } from "../config/env.js";
 import RateLimitLog from "../models/rateLimitLog.model.js";
 import { getClientIp, getDevice } from "../utils/history.util.js";
+
+const REGISTER_RATE_LIMIT_MAX = process.env.REGISTER_RATE_LIMIT_MAX || "5";
+const REGISTER_RATE_LIMIT_WINDOW_MINUTES = process.env.REGISTER_RATE_LIMIT_WINDOW_MINUTES || "60";
+const AUTH_RATE_LIMIT_MAX = process.env.AUTH_RATE_LIMIT_MAX || "20";
+const AUTH_RATE_LIMIT_WINDOW_MINUTES = process.env.AUTH_RATE_LIMIT_WINDOW_MINUTES || "15";
+const API_RATE_LIMIT_MAX = process.env.API_RATE_LIMIT_MAX || "300";
+const API_RATE_LIMIT_WINDOW_MINUTES = process.env.API_RATE_LIMIT_WINDOW_MINUTES || "15";
+const PASSWORD_RESET_RATE_LIMIT_MAX = process.env.PASSWORD_RESET_RATE_LIMIT_MAX || "5";
+const PASSWORD_RESET_RATE_LIMIT_WINDOW_MINUTES = process.env.PASSWORD_RESET_RATE_LIMIT_WINDOW_MINUTES || "60";
 
 /**
  * Fire-and-forget record of this 429 so admins can spot abuse patterns.
@@ -49,20 +57,20 @@ const standardOptions = {
 
 /** Registration: max 5 requests / IP / hour. */
 export const registerLimiter = rateLimit({
-  windowMs: parseInt(env.rateLimits.registerWindowMinutes, 10) * 60_000,
-  limit: parseInt(env.rateLimits.registerMax, 10),
+  windowMs: parseInt(REGISTER_RATE_LIMIT_WINDOW_MINUTES, 10) * 60_000,
+  limit: parseInt(REGISTER_RATE_LIMIT_MAX, 10),
   ...standardOptions,
   handler: limiterHandler("register", "Too many registration attempts from this IP. Please try again later."),
 });
 
 /** Login / OTP endpoints: default 20 attempts / 15 min / IP. */
 export const authLimiter = rateLimit({
-  windowMs: parseInt(env.rateLimits.authWindowMinutes, 10) * 60_000,
-  limit: parseInt(env.rateLimits.authMax, 10),
+  windowMs: parseInt(AUTH_RATE_LIMIT_WINDOW_MINUTES, 10) * 60_000,
+  limit: parseInt(AUTH_RATE_LIMIT_MAX, 10),
   ...standardOptions,
   handler: limiterHandler(
     "auth",
-    `Too many authentication attempts. Please try again in ${env.rateLimits.authWindowMinutes} minutes.`
+    `Too many authentication attempts. Please try again in ${AUTH_RATE_LIMIT_WINDOW_MINUTES} minutes.`
   ),
 });
 
@@ -72,16 +80,16 @@ export const authLimiter = rateLimit({
  * and token brute-forcing from a single machine.
  */
 export const passwordResetLimiter = rateLimit({
-  windowMs: parseInt(env.rateLimits.passwordResetWindowMinutes, 10) * 60_000,
-  limit: parseInt(env.rateLimits.passwordResetMax, 10),
+  windowMs: parseInt(PASSWORD_RESET_RATE_LIMIT_WINDOW_MINUTES, 10) * 60_000,
+  limit: parseInt(PASSWORD_RESET_RATE_LIMIT_MAX, 10),
   ...standardOptions,
   handler: limiterHandler("password_reset", "Too many password reset attempts. Please try again later."),
 });
 
 /** Whole-API limiter: default 300 requests / 15 min / IP. */
 export const apiLimiter = rateLimit({
-  windowMs: parseInt(env.rateLimits.apiWindowMinutes, 10) * 60_000,
-  limit: parseInt(env.rateLimits.apiMax, 10),
+  windowMs: parseInt(API_RATE_LIMIT_WINDOW_MINUTES, 10) * 60_000,
+  limit: parseInt(API_RATE_LIMIT_MAX, 10),
   ...standardOptions,
   handler: limiterHandler("api", "Too many requests from this IP. Please try again later."),
 });

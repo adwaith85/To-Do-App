@@ -9,7 +9,8 @@
  *               - anything else       → 500 with details hidden in production
  */
 import { ApiError } from "../utils/ApiError.js";
-import { env } from "../config/env.js";
+
+const isProd = process.env.NODE_ENV === "production";
 
 /** 404 for unmatched routes. Must be registered AFTER all real routes. */
 export function notFoundHandler(req, _res, next) {
@@ -80,6 +81,6 @@ export function errorHandler(err, req, res, _next) {
     message,
     ...(errors.length > 0 && { errors }),
     ...(code && { code }),
-    ...(env.isProd ? {} : { stack: err.stack?.split("\n") }), // dev-only stack trace
+    ...(isProd ? {} : { stack: err.stack?.split("\n") }), // dev-only stack trace
   });
 }

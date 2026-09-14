@@ -1,9 +1,15 @@
 import cron from "node-cron";
 import Todo from "../models/todo.model.js";
 import User from "../models/user.model.js";
-import { env } from "../config/env.js";
 import nodemailer from "nodemailer";
 import mongoose from "mongoose";
+
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
+const MAIL_FROM = process.env.MAIL_FROM || "Secure Todo <no-reply@todoapp.local>";
+const MONGO_URI = process.env.MONGO_URI;
 
 let transporter = null;
 let reminderTask = null;
@@ -13,14 +19,14 @@ let isProcessing = false;
  * Create SMTP transporter only when SMTP is configured.
  */
 function getTransporter() {
-  if (!transporter && env.smtp.host) {
+  if (!transporter && SMTP_HOST) {
     transporter = nodemailer.createTransport({
-      host: env.smtp.host,
-      port: env.smtp.port,
+      host: SMTP_HOST,
+      port: SMTP_PORT,
       secure: false,
       auth: {
-        user: env.smtp.user,
-        pass: env.smtp.pass,
+        user: SMTP_USER,
+        pass: SMTP_PASS,
       },
     });
   }
@@ -187,7 +193,7 @@ async function sendReminderEmail(user, todo) {
 
   try {
     await transport.sendMail({
-      from: env.smtp.from,
+      from: MAIL_FROM,
       to: user.email,
       subject: `Reminder: ${todo.task}`,
       html,
@@ -217,7 +223,7 @@ async function processReminders() {
   if (mongoose.connection.readyState !== 1) {
     console.warn("[reminder] MongoDB is not connected — attempting reconnect");
     try {
-      await mongoose.connect(env.mongoUri, {
+      await mongoose.connect(MONGO_URI, {
         serverSelectionTimeoutMS: 10000,
         connectTimeoutMS: 10000,
       });

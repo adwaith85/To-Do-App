@@ -6,10 +6,15 @@
  * attempts, and enforce a resend cooldown to prevent mail bombing.
  */
 import Otp, { OTP_TYPES } from "../models/otp.model.js";
-import { env } from "../config/env.js";
 import { generateOtpCode, hashOtpCode } from "../utils/otp.util.js";
 import { sendOtpEmail } from "../utils/mailer.util.js";
 import { ApiError } from "../utils/ApiError.js";
+
+const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES || "10", 10);
+const OTP_MAX_ATTEMPTS = parseInt(process.env.OTP_MAX_ATTEMPTS || "5", 10);
+const OTP_RESEND_COOLDOWN_SECONDS = parseInt(process.env.OTP_RESEND_COOLDOWN_SECONDS || "60", 10);
+const isProd = process.env.NODE_ENV === "production";
+const isTest = process.env.NODE_ENV === "test";
 
 /**
  * Create (or replace) the active OTP for an email, then deliver it.
@@ -32,7 +37,7 @@ export async function issueOtp(type, target, userId = null) {
         codeHash: hashOtpCode(code),
         attempts: 0,      // fresh code → fresh attempt budget
         used: false,
-        expiresAt: new Date(Date.now() + env.otp.expiryMinutes * 60_000),
+        expiresAt: new Date(Date.now() + OTP_EXPIRY_MINUTES * 60_000),
       },
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -41,7 +46,7 @@ export async function issueOtp(type, target, userId = null) {
   const { delivered } = await sendOtpEmail(target, code);
 
   // Dev fallback: expose the code only when no real provider exists.
-  const devAllowed = !env.isProd && !env.isTest;
+  const devAllowed = !isProd && !isTest;
   return delivered ? { delivered } : devAllowed ? { delivered, devCode: code } : { delivered };
 }
 
@@ -54,8 +59,8 @@ export async function assertResendCooldown(target, type) {
   if (!existing) return;
 
   const elapsedSeconds = (Date.now() - existing.updatedAt.getTime()) / 1000;
-  if (elapsedSeconds < env.otp.resendCooldownSeconds) {
-    const wait = Math.ceil(env.otp.resendCooldownSeconds - elapsedSeconds);
+  if (elapsedSeconds < OTP_RESEND_COOLDOWN_SECONDS) {
+    const wait = Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - elapsedSeconds);
     throw ApiError.tooManyRequests(`Please wait ${wait}s before requesting another code.`);
   }
 }
@@ -85,7 +90,7 @@ export async function verifyOtpForTarget(type, target, code) {
   if (otpDoc.codeHash !== hashOtpCode(code)) {
     otpDoc.attempts += 1;
     await otpDoc.save();
-    const remaining = Math.max(0, env.otp.maxAttempts - otpDoc.attempts);
+    const remaining = Math.max(0, OTP_MAX_ATTEMPTS - otpDoc.attempts);
     throw ApiError.badRequest(
       remaining > 0
         ? `Incorrect verification code. ${remaining} attempt(s) left.`

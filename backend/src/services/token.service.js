@@ -19,7 +19,6 @@
  */
 import User from "../models/user.model.js";
 import InvalidatedToken from "../models/invalidatedToken.model.js";
-import { env } from "../config/env.js";
 import {
   signAccessToken,
   signRefreshToken,
@@ -28,6 +27,24 @@ import {
 } from "../utils/jwt.util.js";
 import { ApiError } from "../utils/ApiError.js";
 import { getClientIp, getDevice } from "../utils/history.util.js";
+
+const isProd = process.env.NODE_ENV === "production";
+const COOKIE_SAMESITE = process.env.COOKIE_SAMESITE || "lax";
+const REFRESH_TOKEN_COOKIE_NAME = process.env.REFRESH_TOKEN_COOKIE_NAME || "refreshToken";
+const SESSION_MARKER_COOKIE_NAME = process.env.SESSION_MARKER_COOKIE_NAME || "appSession";
+const REMEMBER_ME_COOKIE_NAME = process.env.REMEMBER_ME_COOKIE_NAME || "rememberMe";
+
+function parseDurationMs(value) {
+  const match = /^(\d+)\s*(s|m|h|d)?$/i.exec(String(value).trim());
+  if (!match) return 7 * 24 * 60 * 60 * 1000;
+  const amount = parseInt(match[1], 10);
+  const unit = (match[2] || "s").toLowerCase();
+  const multipliers = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  return amount * multipliers[unit];
+}
+
+const JWT_REFRESH_TTL_MS = parseDurationMs(process.env.JWT_REFRESH_EXPIRES_IN || "7d");
+const JWT_REFRESH_REMEMBER_TTL_MS = parseDurationMs(process.env.JWT_REFRESH_REMEMBER_EXPIRES_IN || "30d");
 
 /* ------------------------------------------------------------------ */
 /* Cookie helpers                                                      */
@@ -41,71 +58,65 @@ import { getClientIp, getDevice } from "../utils/history.util.js";
  * @param {number} [maxAgeMs] - omit for the standard 7-day lifetime;
  *                              "Remember me" sessions pass 30 days.
  */
-export function refreshCookieOptions(maxAgeMs = env.jwt.refreshTtlMs) {
+export function refreshCookieOptions(maxAgeMs = JWT_REFRESH_TTL_MS) {
   return {
     httpOnly: true,
-    secure: env.isProd,
-    sameSite: env.cookies.sameSite,
+    secure: isProd,
+    sameSite: COOKIE_SAMESITE,
     path: "/api/auth",
     maxAge: maxAgeMs,
   };
 }
 
 export function setRefreshCookie(res, rawToken, { rememberMe = false } = {}) {
-  const maxAgeMs = rememberMe ? env.jwt.refreshRememberTtlMs : env.jwt.refreshTtlMs;
-  res.cookie(env.cookies.refreshTokenName, rawToken, refreshCookieOptions(maxAgeMs));
-  res.cookie(env.cookies.sessionMarkerName, "1", sessionMarkerOptions(maxAgeMs));
+  const maxAgeMs = rememberMe ? JWT_REFRESH_REMEMBER_TTL_MS : JWT_REFRESH_TTL_MS;
+  res.cookie(REFRESH_TOKEN_COOKIE_NAME, rawToken, refreshCookieOptions(maxAgeMs));
+  res.cookie(SESSION_MARKER_COOKIE_NAME, "1", sessionMarkerOptions(maxAgeMs));
 }
 
-/** Readable marker the SPA can see (no httpOnly) so it knows a session
- *  exists. Path "/" so document.cookie can see it on any SPA page.
- *  @param {number} [maxAgeMs] - keep it aligned with the refresh cookie. */
-export function sessionMarkerOptions(maxAgeMs = env.jwt.refreshTtlMs) {
+export function sessionMarkerOptions(maxAgeMs = JWT_REFRESH_TTL_MS) {
   return {
     httpOnly: false,
-    secure: env.isProd,
-    sameSite: env.cookies.sameSite,
+    secure: isProd,
+    sameSite: COOKIE_SAMESITE,
     path: "/",
     maxAge: maxAgeMs,
   };
 }
 
 export function clearRefreshCookie(res) {
-  // Must match the original options for the browser to remove it.
-  res.clearCookie(env.cookies.refreshTokenName, refreshCookieOptions());
-  res.clearCookie(env.cookies.sessionMarkerName, sessionMarkerOptions());
+  res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, refreshCookieOptions());
+  res.clearCookie(SESSION_MARKER_COOKIE_NAME, sessionMarkerOptions());
 }
 
 /* ------------------------------------------------------------------ */
 /* Remember-me cookie helpers                                          */
 /* ------------------------------------------------------------------ */
 
-/** 7-day remember-me cookie — survives logout, enables auto-login. */
 export function rememberMeCookieOptions() {
   return {
     httpOnly: true,
-    secure: env.isProd,
-    sameSite: env.cookies.sameSite,
+    secure: isProd,
+    sameSite: COOKIE_SAMESITE,
     path: "/api/auth",
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   };
 }
 
 export function setRememberMeCookie(res, rawToken) {
-  res.cookie(env.cookies.rememberMeName, rawToken, rememberMeCookieOptions());
+  res.cookie(REMEMBER_ME_COOKIE_NAME, rawToken, rememberMeCookieOptions());
 }
 
 export function clearRememberMeCookie(res) {
-  res.clearCookie(env.cookies.rememberMeName, rememberMeCookieOptions());
+  res.clearCookie(REMEMBER_ME_COOKIE_NAME, rememberMeCookieOptions());
 }
 
 export function getRememberMeFromRequest(req) {
-  return req.cookies?.[env.cookies.rememberMeName] || null;
+  return req.cookies?.[REMEMBER_ME_COOKIE_NAME] || null;
 }
 
-/** Read the raw refresh token from the incoming request cookie jar. */
 export function getRefreshTokenFromRequest(req) {
-  return req.cookies?.[env.cookies.refreshTokenName] || null;
+  return req.cookies?.[REFRESH_TOKEN_COOKIE_NAME] || null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -283,7 +294,7 @@ export async function revokeSessionById(userId, sessionId, currentRawToken) {
   if (!target) return { existed: false, wasCurrent: false };
 
   const deadHash = target.tokenHash;
-  const naturalExpiry = new Date(Date.now() + env.jwt.refreshTtlMs);
+  const naturalExpiry = new Date(Date.now() + JWT_REFRESH_TTL_MS);
 
   await Promise.all([
     // Pull by HASH (string) — pulling by _id would compare a JS string
@@ -335,7 +346,7 @@ export async function revokeAllSessions(userId) {
 
 /** Blacklist helper stamping rows with a generous TTL-safe expiry. */
 function blacklistWithUpperBound(userId, hashes, reason) {
-  const upperBoundExpiry = new Date(Date.now() + env.jwt.refreshTtlMs);
+  const upperBoundExpiry = new Date(Date.now() + JWT_REFRESH_TTL_MS);
   return InvalidatedToken.invalidateMany(userId, hashes, upperBoundExpiry, reason);
 }
 

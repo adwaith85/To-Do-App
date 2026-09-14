@@ -8,8 +8,14 @@
  */
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import { env } from "../config/env.js";
 import { ApiError } from "./ApiError.js";
+
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-access-secret";
+const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "15m";
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "dev-refresh-secret";
+const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
+const JWT_REFRESH_REMEMBER_EXPIRES_IN = process.env.JWT_REFRESH_REMEMBER_EXPIRES_IN || "30d";
+const TWO_FACTOR_PENDING_TTL = process.env.TWO_FACTOR_PENDING_TTL || "10m";
 
 /** Create a short-lived access token for a user document.
  * Carries the user's role so the client can branch on it (user vs admin)
@@ -23,8 +29,8 @@ import { ApiError } from "./ApiError.js";
 export function signAccessToken(user, role = user?.role || "user") {
   return jwt.sign(
     { sub: String(user._id), role },
-    env.jwt.accessSecret,
-    { expiresIn: env.jwt.accessExpiresIn }
+    JWT_ACCESS_SECRET,
+    { expiresIn: JWT_ACCESS_EXPIRES_IN }
   );
 }
 
@@ -43,8 +49,8 @@ export function signAccessToken(user, role = user?.role || "user") {
 export function signRefreshToken(user, { rememberMe = false, role } = {}) {
   return jwt.sign(
     { sub: String(user._id), jti: crypto.randomUUID(), rem: rememberMe, role: role || user.role || "user" },
-    env.jwt.refreshSecret,
-    { expiresIn: rememberMe ? env.jwt.refreshRememberExpiresIn : env.jwt.refreshExpiresIn }
+    JWT_REFRESH_SECRET,
+    { expiresIn: rememberMe ? JWT_REFRESH_REMEMBER_EXPIRES_IN : JWT_REFRESH_EXPIRES_IN }
   );
 }
 
@@ -58,15 +64,15 @@ export function signRefreshToken(user, { rememberMe = false, role } = {}) {
 export function signTwoFactorPendingToken(user, role = user?.role || "user") {
   return jwt.sign(
     { sub: String(user._id), purpose: "2fa", role },
-    env.jwt.accessSecret,
-    { expiresIn: env.jwt.twoFactorExpiresIn }
+    JWT_ACCESS_SECRET,
+    { expiresIn: TWO_FACTOR_PENDING_TTL }
   );
 }
 
 /** Verify a 2FA pending token or throw a 401 ApiError. */
 export function verifyTwoFactorPendingToken(token) {
   try {
-    const payload = jwt.verify(token, env.jwt.accessSecret);
+    const payload = jwt.verify(token, JWT_ACCESS_SECRET);
     if (payload.purpose !== "2fa") throw new Error("wrong purpose");
     return payload;
   } catch {
@@ -82,15 +88,15 @@ export function verifyTwoFactorPendingToken(token) {
 export function signSignupToken(user) {
   return jwt.sign(
     { sub: String(user._id), purpose: "signup" },
-    env.jwt.accessSecret,
-    { expiresIn: env.jwt.twoFactorExpiresIn }
+    JWT_ACCESS_SECRET,
+    { expiresIn: TWO_FACTOR_PENDING_TTL }
   );
 }
 
 /** Verify a signup token or throw a 400 ApiError. */
 export function verifySignupToken(token) {
   try {
-    const payload = jwt.verify(token, env.jwt.accessSecret);
+    const payload = jwt.verify(token, JWT_ACCESS_SECRET);
     if (payload.purpose !== "signup") throw new Error("wrong purpose");
     return payload;
   } catch {
@@ -105,7 +111,7 @@ export function verifySignupToken(token) {
 /** Verify an access token or throw a 401 ApiError. */
 export function verifyAccessToken(token) {
   try {
-    return jwt.verify(token, env.jwt.accessSecret);
+    return jwt.verify(token, JWT_ACCESS_SECRET);
   } catch (err) {
     if (err.name === "TokenExpiredError") {
       throw new ApiError(401, "Access token expired", [], "TOKEN_EXPIRED");
@@ -117,7 +123,7 @@ export function verifyAccessToken(token) {
 /** Verify a refresh token or throw a 401 ApiError. */
 export function verifyRefreshToken(token) {
   try {
-    return jwt.verify(token, env.jwt.refreshSecret);
+    return jwt.verify(token, JWT_REFRESH_SECRET);
   } catch (err) {
     if (err.name === "TokenExpiredError") {
       throw new ApiError(401, "Refresh token expired, please log in again", [], "REFRESH_EXPIRED");

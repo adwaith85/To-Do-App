@@ -1,26 +1,34 @@
-import { createApp } from "./src/app.js";
-import { connectDB, disconnectDB } from "./src/config/db.js";
-import { env } from "./src/config/env.js";
-import {
-  startReminderCron,
-  stopReminderCron,
-} from "./src/utils/reminder.util.js";
+import dotenv from "dotenv";
+import mongoose from "mongoose";
+
+dotenv.config();
+
+const PORT = parseInt(process.env.PORT, 10);
+const NODE_ENV = process.env.NODE_ENV || "development";
+
+// ES module imports are hoisted and evaluated BEFORE this file's body runs,
+// so the app modules must be loaded AFTER dotenv.config() to see real env
+// values (SMTP creds, JWT secrets, rate limits, etc.).
+const { createApp } = await import("./src/app.js");
+const { startReminderCron, stopReminderCron } = await import(
+  "./src/utils/reminder.util.js"
+);
 
 async function bootstrap() {
   let server;
 
   try {
     // 1. MongoDB MUST connect successfully first
-    await connectDB();
+    await mongoose.connect(process.env.MONGO_URI);
 
     console.log("[server] Database ready");
 
     // 2. Start Express only after DB is ready
     const app = createApp();
 
-    server = app.listen(env.port, () => {
+    server = app.listen(PORT, () => {
       console.log(
-        `[server] API listening on http://localhost:${env.port} (${env.nodeEnv})`
+        `[server] API listening on http://localhost:${PORT} (${NODE_ENV})`
       );
     });
 
@@ -30,41 +38,34 @@ async function bootstrap() {
     let isShuttingDown = false;
 
     const shutdown = async (signal) => {
-  if (isShuttingDown) return;
+      if (isShuttingDown) return;
 
-  isShuttingDown = true;
+      isShuttingDown = true;
 
-  console.log(`\n[server] ${signal} received — shutting down...`);
+      console.log(`\n[server] ${signal} received — shutting down...`);
 
-  try {
-    stopReminderCron();
+      try {
+        stopReminderCron();
 
-    if (server) {
-      await new Promise((resolve) => {
-        server.close(() => resolve());
-      });
-    }
+        if (server) {
+          await new Promise((resolve) => {
+            server.close(() => resolve());
+          });
+        }
 
-    await disconnectDB();
-
-    console.log("[server] Shutdown complete");
-    process.exit(0);
-  } catch (error) {
-    console.error("[server] Shutdown error:", error);
-    process.exit(1);
-  }
-};
+        console.log("[server] Shutdown complete");
+        process.exit(0);
+      } catch (error) {
+        console.error("[server] Shutdown error:", error);
+        process.exit(1);
+      }
+    };
 
     process.once("SIGINT", () => shutdown("SIGINT"));
     process.once("SIGTERM", () => shutdown("SIGTERM"));
   } catch (error) {
     console.error("[server] Failed to start:");
     console.error(error.message);
-
-    // Make absolutely sure nothing remains running
-    try {
-      await disconnectDB();
-    } catch {}
 
     process.exit(1);
   }

@@ -12,7 +12,9 @@
  */
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
-import { env } from "../config/env.js";
+
+const LOCKOUT_MAX_FAILED_ATTEMPTS = parseInt(process.env.MAX_FAILED_LOGIN_ATTEMPTS || "5", 10);
+const LOCKOUT_MINUTES = parseInt(process.env.LOCK_TIME_MINUTES || "60", 10);
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -220,8 +222,8 @@ userSchema.methods.minutesUntilUnlock = function () {
 /** Record a failed login; locks the account at the configured threshold. */
 userSchema.methods.registerFailedLogin = function () {
   this.failedLoginAttempts += 1;
-  if (this.failedLoginAttempts >= env.lockout.maxFailedAttempts) {
-    this.lockUntil = new Date(Date.now() + env.lockout.lockMinutes * 60_000);
+  if (this.failedLoginAttempts >= LOCKOUT_MAX_FAILED_ATTEMPTS) {
+    this.lockUntil = new Date(Date.now() + LOCKOUT_MINUTES * 60_000);
   }
   return this.save();
 };

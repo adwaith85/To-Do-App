@@ -14,7 +14,9 @@ import path from "path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-import { env } from "./config/env.js";
+const isProd = process.env.NODE_ENV === "production";
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
+
 import authRoutes from "./routes/auth.routes.js";
 import todoRoutes from "./routes/todo.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
@@ -31,10 +33,10 @@ export function createApp() {
   app.use(helmet());
 
   // Trust the first proxy hop so req.ip / rate limiting see real client IPs.
-  if (env.isProd) app.set("trust proxy", 1);
+  if (isProd) app.set("trust proxy", 1);
 
   // Production hardening: force HTTPS when the proxy tells us it was plain.
-  if (env.isProd) {
+  if (isProd) {
     app.use((req, res, next) => {
       if (req.headers["x-forwarded-proto"] === "http") {
         return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
@@ -46,7 +48,7 @@ export function createApp() {
   // Allow only the frontend origin, WITH credentials (refresh cookie).
   app.use(
     cors({
-      origin: env.clientUrl,
+      origin: CLIENT_URL,
       credentials: true,
       methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     })
@@ -64,7 +66,7 @@ export function createApp() {
 
   /* ---- Lightweight request logger (development only) ---- */
 
-  if (!env.isProd) {
+  if (!isProd) {
     app.use((req, _res, next) => {
       console.log(`[http] ${req.method} ${req.originalUrl}`);
       next();

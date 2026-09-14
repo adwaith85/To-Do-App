@@ -9,18 +9,18 @@
  * check is skipped entirely (local development without keys).
  */
 import crypto from "crypto";
-import { env } from "../config/env.js";
 import { ApiError } from "./ApiError.js";
 
 const VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
 
-/** Is captcha enforcement active on this deployment?
- * reCAPTCHA v3 needs reliable outbound HTTPS to Google's siteverify API,
- * which local dev machines often can't reach — so it is only enforced in
- * production. */
+const isProd = process.env.NODE_ENV === "production";
+const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || "";
+const RECAPTCHA_MIN_SCORE = parseFloat(process.env.RECAPTCHA_MIN_SCORE || "0.5");
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "dev-refresh-secret";
+
 export function captchaEnabled() {
-  if (!env.isProd) return false;
-  return Boolean(env.recaptcha.secretKey);
+  if (!isProd) return false;
+  return Boolean(RECAPTCHA_SECRET_KEY);
 }
 
 /**
@@ -38,7 +38,7 @@ export async function assertCaptcha(token, expectedAction) {
   let result;
   try {
     const params = new URLSearchParams({
-      secret: env.recaptcha.secretKey,
+      secret: RECAPTCHA_SECRET_KEY,
       response: token,
     });
 
@@ -58,7 +58,7 @@ export async function assertCaptcha(token, expectedAction) {
   const actionOk = !expectedAction || result.action === expectedAction;
   // Some responses omit "score" (v2-style); treat missing score as neutral.
   const scoreOk =
-    typeof result.score !== "number" || result.score >= env.recaptcha.minScore;
+    typeof result.score !== "number" || result.score >= RECAPTCHA_MIN_SCORE;
   const passed = result.success === true && actionOk && scoreOk;
 
   if (!passed) {
@@ -93,7 +93,7 @@ function pick(list) {
 
 function captchaHmac(code, exp, nonce) {
   return crypto
-    .createHmac("sha256", env.jwt.refreshSecret)
+    .createHmac("sha256", JWT_REFRESH_SECRET)
     .update(`${code}|${exp}|${nonce}`)
     .digest("base64url")
     .slice(0, 32);
