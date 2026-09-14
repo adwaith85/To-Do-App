@@ -299,13 +299,12 @@ export default function TodoForm({ open, onClose, editTodo = null, onSaved, onAr
           </div>
 
           {showReminder && (
-            <div className="mt-4">
-              <ReminderPicker
-                value={form.reminderAt}
-                onChange={(v) => update({ reminderAt: v })}
-                onDone={() => setShowReminder(false)}
-              />
-            </div>
+            <ReminderPicker
+              value={form.reminderAt}
+              onChange={(v) => update({ reminderAt: v })}
+              onDone={() => setShowReminder(false)}
+              light={light}
+            />
           )}
 
           {/* Dates */}

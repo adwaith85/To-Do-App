@@ -236,13 +236,12 @@ export default function TodoCompose({ onCreated }) {
 
       {/* Reminder picker */}
       {showReminder && (
-        <div className="px-4 pb-3">
-          <ReminderPicker
-            value={reminderAt}
-            onChange={handleReminder}
-            onDone={() => setShowReminder(false)}
-          />
-        </div>
+        <ReminderPicker
+          value={reminderAt}
+          onChange={handleReminder}
+          onDone={() => setShowReminder(false)}
+          light={light}
+        />
       )}
 
       {/* Options panel */}

@@ -3,6 +3,11 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+const toDateStr = (d) => {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+};
+
 export default function Calendar({ todos = [], onDateClick, selectedDate }) {
   const [viewDate, setViewDate] = useState(new Date());
 
@@ -10,14 +15,22 @@ export default function Calendar({ todos = [], onDateClick, selectedDate }) {
   const month = viewDate.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  const now = new Date();
+  const todayStr = toDateStr(now);
 
-  const todoDates = new Set();
-  const reminderDates = new Set();
+  const marks = new Map();
+  const touch = (dateStr) => {
+    if (!marks.has(dateStr)) marks.set(dateStr, { pending: false, pastDue: false, completed: false, due: false });
+    return marks.get(dateStr);
+  };
+
   todos.forEach((t) => {
-    if (t.dueDate) todoDates.add(new Date(t.dueDate).toISOString().slice(0, 10));
-    if (t.reminderAt) reminderDates.add(new Date(t.reminderAt).toISOString().slice(0, 10));
+    if (t.dueDate) touch(toDateStr(t.dueDate)).due = true;
+    if (!t.reminderAt) return;
+    const mark = touch(toDateStr(t.reminderAt));
+    if (t.status === "completed") mark.completed = true;
+    else if (new Date(t.reminderAt) <= now) mark.pastDue = true;
+    else mark.pending = true;
   });
 
   const cells = [];
@@ -50,8 +63,9 @@ export default function Calendar({ todos = [], onDateClick, selectedDate }) {
           const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
           const isToday = dateStr === todayStr;
           const isSelected = dateStr === selectedDate;
-          const hasTodo = todoDates.has(dateStr);
-          const hasReminder = reminderDates.has(dateStr);
+          const m = marks.get(dateStr);
+          const hasReminderMark = m && (m.pending || m.pastDue || m.completed);
+          const hasDueMark = m && m.due;
 
           return (
             <button
@@ -66,12 +80,31 @@ export default function Calendar({ todos = [], onDateClick, selectedDate }) {
               }`}
             >
               {day}
-              {(hasTodo || hasReminder) && (
-                <span className={`absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full ${hasReminder ? "bg-accent-400" : "bg-brand-400"}`} />
+              {hasReminderMark && (
+                <span className="absolute bottom-0.5 left-1/2 flex -translate-x-1/2 items-center gap-0.5">
+                  {m.pending && <span className={`h-1 w-1 rounded-full ${isSelected ? "bg-white" : "bg-brand-400"}`} />}
+                  {m.pastDue && <span className="h-1 w-1 rounded-full bg-rose-400" />}
+                  {m.completed && <span className="h-1 w-1 rounded-full bg-emerald-400" />}
+                </span>
+              )}
+              {!hasReminderMark && hasDueMark && (
+                <span className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-slate-500" />
               )}
             </button>
           );
         })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/5 pt-2.5">
+        <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-brand-400" /> Upcoming
+        </span>
+        <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-rose-400" /> Past due
+        </span>
+        <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Done
+        </span>
       </div>
     </div>
   );

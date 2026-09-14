@@ -6,9 +6,6 @@ dotenv.config();
 const PORT = parseInt(process.env.PORT, 10);
 const NODE_ENV = process.env.NODE_ENV || "development";
 
-// ES module imports are hoisted and evaluated BEFORE this file's body runs,
-// so the app modules must be loaded AFTER dotenv.config() to see real env
-// values (SMTP creds, JWT secrets, rate limits, etc.).
 const { createApp } = await import("./src/app.js");
 const { startReminderCron, stopReminderCron } = await import(
   "./src/utils/reminder.util.js"

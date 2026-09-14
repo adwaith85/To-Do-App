@@ -1,9 +1,14 @@
 import { useState, useEffect } from "react";
-import { Bell, Clock, Calendar, AlertTriangle, Check } from "lucide-react";
+import { Bell, Clock, Calendar, AlertTriangle, Check, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import client from "../api/client";
 import Spinner from "../components/Spinner";
 import CalendarComponent from "../components/Calendar";
+
+function toDateStr(d) {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
 
 function fmtDateTime(iso) {
   if (!iso) return "";
@@ -43,12 +48,7 @@ export default function Reminders() {
     .sort((a, b) => new Date(b.reminderAt) - new Date(a.reminderAt));
   const completed = reminderTodos.filter((t) => t.status === "completed");
 
-  const selectedTodos = selectedDate
-    ? reminderTodos.filter((t) => {
-        const d = new Date(t.reminderAt).toISOString().slice(0, 10);
-        return d === selectedDate;
-      })
-    : [];
+  const selectedTodos = selectedDate ? reminderTodos.filter((t) => toDateStr(t.reminderAt) === selectedDate) : [];
 
   const toggleTodo = async (id) => {
     try {
@@ -56,6 +56,16 @@ export default function Reminders() {
       setTodos((prev) => prev?.map((t) => (t._id === id ? data.data : t)));
     } catch {
       toast.error("Could not update task");
+    }
+  };
+
+  const deleteTodo = async (id) => {
+    try {
+      await client.delete(`/api/todos/${id}`);
+      setTodos((prev) => prev?.filter((t) => t._id !== id));
+      toast.success("Reminder removed");
+    } catch {
+      toast.error("Could not remove reminder");
     }
   };
 
@@ -97,7 +107,7 @@ export default function Reminders() {
                 </h2>
                 <div className="space-y-2">
                   {(selectedDate ? selectedTodos.filter((t) => new Date(t.reminderAt) <= now && t.status !== "completed") : pastDue).map((todo) => (
-                    <ReminderCard key={todo._id} todo={todo} onToggle={toggleTodo} isPastDue />
+                    <ReminderCard key={todo._id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo} isPastDue />
                   ))}
                 </div>
               </section>
@@ -110,7 +120,7 @@ export default function Reminders() {
                 </h2>
                 <div className="space-y-2">
                   {(selectedDate ? selectedTodos.filter((t) => new Date(t.reminderAt) > now) : upcoming).map((todo) => (
-                    <ReminderCard key={todo._id} todo={todo} onToggle={toggleTodo} />
+                    <ReminderCard key={todo._id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo} />
                   ))}
                 </div>
               </section>
@@ -123,7 +133,7 @@ export default function Reminders() {
                 </h2>
                 <div className="space-y-2">
                   {(selectedDate ? selectedTodos.filter((t) => t.status === "completed") : completed).map((todo) => (
-                    <ReminderCard key={todo._id} todo={todo} onToggle={toggleTodo} isCompleted />
+                    <ReminderCard key={todo._id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo} isCompleted />
                   ))}
                 </div>
               </section>
@@ -150,7 +160,7 @@ export default function Reminders() {
   );
 }
 
-function ReminderCard({ todo, onToggle, isPastDue, isCompleted }) {
+function ReminderCard({ todo, onToggle, onDelete, isPastDue, isCompleted }) {
   return (
     <div
       className={`group flex items-start gap-3 rounded-2xl border px-4 py-3.5 transition-all duration-200 ${
@@ -193,6 +203,15 @@ function ReminderCard({ todo, onToggle, isPastDue, isCompleted }) {
           )}
         </div>
       </div>
+
+      <button
+        onClick={() => onDelete?.(todo._id)}
+        className="mb-px shrink-0 rounded-lg p-1.5 text-slate-600 transition hover:bg-rose-500/10 hover:text-rose-400"
+        aria-label="Delete reminder"
+        title="Delete reminder"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
