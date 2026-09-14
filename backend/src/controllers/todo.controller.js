@@ -19,6 +19,21 @@ function recordHistory(todo, action, detail = "") {
   }
 }
 
+/**
+ * Manual order comparator shared by every "active todos" query.
+ * Pinned cards first, then by the user's hand-written `order`
+ * (cards still missing an order keep their pinned-then-createdAt fallback).
+ */
+function sortTodos(list) {
+  return [...list].sort((a, b) => {
+    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+    const ao = a.order == null ? Number.MAX_SAFE_INTEGER : a.order;
+    const bo = b.order == null ? Number.MAX_SAFE_INTEGER : b.order;
+    if (ao !== bo) return ao - bo;
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
+}
+
 /** A todo with no title, description, or any other content is an empty card. */
 function isEmptyTodo(todo) {
   return (
@@ -35,9 +50,9 @@ function isEmptyTodo(todo) {
 
 export const getTodos = asyncHandler(async (req, res) => {
   const todos = await Todo.find({ user: req.user._id, isDeleted: false, isArchived: false, status: { $ne: "completed" } })
-    .sort({ isPinned: -1, createdAt: -1 })
+    .sort({ isPinned: -1, order: 1, createdAt: -1 })
     .maxTimeMS(10_000);
-  res.status(200).json({ success: true, data: todos });
+  res.status(200).json({ success: true, data: sortTodos(todos) });
 });
 
 export const getCompletedTodos = asyncHandler(async (req, res) => {
@@ -224,19 +239,25 @@ export const removeAttachment = asyncHandler(async (req, res) => {
 
 export const reorderTodos = asyncHandler(async (req, res) => {
   const { orders } = req.body;
-  if (!Array.isArray(orders)) throw ApiError.badRequest("orders array required");
+  if (!Array.isArray(orders) || orders.length === 0) {
+    throw ApiError.badRequest("orders array required");
+  }
 
-  const ops = orders.map(({ id, order }) =>
-    Todo.updateOne(
-      { _id: id, user: req.user._id },
-      { $set: { order } }
-    )
+  const ids = orders
+    .map((o) => (typeof o === "string" ? o : o?.id))
+    .map((id) => String(id || ""))
+    .filter((id) => /^[0-9a-fA-F]{24}$/.test(id));
+  if (ids.length === 0) throw ApiError.badRequest("No valid todos to reorder");
+
+  const ops = ids.map((id, idx) =>
+    Todo.updateOne({ _id: id, user: req.user._id }, { $set: { order: idx } })
   );
   await Promise.all(ops);
 
-  const todos = await Todo.find({ user: req.user._id, isDeleted: false, isArchived: false })
-    .sort({ isPinned: -1, createdAt: -1 });
-  res.status(200).json({ success: true, data: todos });
+  const todos = await Todo.find({ user: req.user._id, isDeleted: false, isArchived: false, status: { $ne: "completed" } })
+    .sort({ isPinned: -1, order: 1, createdAt: -1 })
+    .maxTimeMS(10_000);
+  res.status(200).json({ success: true, data: sortTodos(todos) });
 });
 
 export const toggleTodo = asyncHandler(async (req, res) => {

@@ -212,10 +212,19 @@ async function sendReminderEmail(user, todo) {
  * Process reminders that are due.
  */
 async function processReminders() {
-  // Do not query MongoDB when disconnected.
+  // Try to reconnect once when the driver is down, instead of
+  // silently skipping every run forever.
   if (mongoose.connection.readyState !== 1) {
-    console.warn("[reminder] MongoDB is not connected — skipping this run");
-    return;
+    console.warn("[reminder] MongoDB is not connected — attempting reconnect");
+    try {
+      await mongoose.connect(env.mongoUri, {
+        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 10000,
+      });
+    } catch (error) {
+      console.warn("[reminder] Reconnect failed — skipping this run:", error.message);
+      return;
+    }
   }
 
   // Prevent overlapping cron executions.
