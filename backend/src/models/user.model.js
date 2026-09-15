@@ -42,7 +42,8 @@ const userSchema = new mongoose.Schema(
     phone: {
       type: String,
       required: [true, "Phone number is required"],
-      unique: true,
+      // NOT unique — different accounts may share the same phone number.
+      // Only the email address is unique per account.
       // Stored normalized in E.164 (e.g. "+919876543210") by libphonenumber-js
       // in the validation layer; this regex is a final sanity net.
       // NOTE: phone is validated for correct digit-count-per-country but is

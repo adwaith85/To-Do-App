@@ -52,20 +52,22 @@ const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES || "10", 10);
  *   register (name/email/phone) → verify-otp → set-password → login
  *
  * Protections: reCAPTCHA (optional), register rate limit (5/h/IP),
- * duplicate email/phone check.
+ * duplicate email check (phone is not unique).
  */
 export const register = asyncHandler(async (req, res) => {
   const { name, email, phone, countryCode, captchaToken } = req.body;
 
   await assertCaptcha(captchaToken, "register");
 
-  // Reject when email OR phone already belongs to a registered account.
-  const existing = await User.findOne({ $or: [{ email }, { phone }] });
+  // Reject when the email already belongs to a registered account.
+  // Phone numbers are intentionally NOT unique — different accounts may
+  // share one phone number.
+  const existing = await User.findOne({ email });
   if (existing) {
     await logAuthEvent({
       userId: existing._id, action: "REGISTER_BLOCKED", status: "failed", req,
     });
-    throw ApiError.conflict("An account with this email or phone already exists. Try logging in.");
+    throw ApiError.conflict("An account with this email already exists. Try logging in.");
   }
 
   // isEmailVerified stays false; password is set after verification.
@@ -370,33 +372,41 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Please verify your email first.", [], "EMAIL_NOT_VERIFIED");
   }
 
-  /* ---- Unified verification field: Admin Code OR visual captcha ----
-   * One input serves two purposes, disambiguated by FORMAT:
-   *   - an admin whose DB role is "admin" and who has an adminCode set and
-   *     whose typed value HASH-MATCHES that code  → ADMIN login.
-   *   - otherwise (or when the above doesn't match) → treat the value as
-   *     a normal visual-captcha response → USER login.
-   * Admin-code match is attempted FIRST so there is no ambiguity. The
-   * password ALWAYS must match (verified above) regardless of path. */
+  /* ---- Unified verification field: on-screen captcha OR admin code ----
+   * One input, resolved in this exact order:
+   *   1. The typed value matches the captcha shown on screen
+   *        → normal USER login → the client routes to the todo app.
+   *   2. Otherwise the typed value HASH-MATCHES this account's admin code,
+   *      so the account's ROLE decides:
+   *        - role "admin" → ADMIN login → the client routes to /admin.
+   *        - role "user"  → denied with the SAME "wrong captcha" error, so
+   *          a non-admin can never obtain admin rights just by knowing the
+   *          code (and the failure is indistinguishable from a bad captcha).
+   *   3. Anything else → "wrong captcha".
+   * The password ALWAYS must match (verified above) whichever path is taken. */
   let effectiveRole = "user";
-  const codeMatch =
-    user.role === "admin" &&
-    Boolean(user.adminCode) &&
-    (await user.compareAdminCode(verificationField));
 
-  if (codeMatch) {
-    // Admin decrypted: this session gets the admin token.
-    effectiveRole = "admin";
+  if (verifyCaptcha(visualCaptchaToken, verificationField)) {
+    // The on-screen captcha was solved → ordinary user session.
+    effectiveRole = "user";
   } else {
-    // Fall back to normal captcha validation for a USER login.
-    if (!verifyCaptcha(visualCaptchaToken, verificationField)) {
+    // Not the on-screen captcha — check whether it is the admin code.
+    const adminCodeMatch =
+      Boolean(user.adminCode) &&
+      (await user.compareAdminCode(verificationField));
+
+    if (adminCodeMatch && user.role === "admin") {
+      // Correct admin code on an actual admin account → admin session.
+      effectiveRole = "admin";
+    } else {
+      // Wrong captcha, wrong admin code, or an admin code used by a
+      // non-admin account — all answer identically so nothing leaks.
       throw ApiError.badRequest(
         "Captcha code is incorrect. Please try again.",
         [],
         "CAPTCHA_FAILED"
       );
     }
-    effectiveRole = "user"; // even DB admins who use a captcha log in as user
   }
 
   /* ---- Two-factor branch: hold the session until the code checks out ---- */
