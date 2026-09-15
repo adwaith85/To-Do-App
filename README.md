@@ -1,4 +1,4 @@
-# SecureTodo — Full-Stack Todo App with Production-Grade Auth
+# GonnaDo App — Full-Stack Todo App with Production-Grade Auth
 
 A React + Tailwind todo application backed by a hardened Node/Express API:
 JWT access/refresh rotation, email OTP verification, optional two-factor

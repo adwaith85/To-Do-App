@@ -58,7 +58,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-accent-500 text-xl font-black text-white shadow-glow">
                 ✓
               </div>
-              <span className="text-lg font-bold tracking-tight">SecureTodo</span>
+              <span className="text-lg font-bold tracking-tight">GonnaDo App</span>
             </div>
 
             <h2 className="mt-12 text-3xl font-extrabold leading-tight tracking-tight">
@@ -95,7 +95,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-400 to-accent-500 text-base font-black text-white">
               ✓
             </div>
-            <span className="font-bold tracking-tight">SecureTodo</span>
+            <span className="font-bold tracking-tight">GonnaDo App</span>
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>

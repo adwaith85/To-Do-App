@@ -13,7 +13,7 @@ const SMTP_HOST = process.env.SMTP_HOST || "";
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
 const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
-const MAIL_FROM = process.env.MAIL_FROM || "Secure Todo <no-reply@todoapp.local>";
+const MAIL_FROM = process.env.MAIL_FROM || "GonnaDo App <no-reply@todoapp.local>";
 const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES || "10", 10);
 
 const transporter =
@@ -50,7 +50,7 @@ function emailShell({ preheader, body, footerNote = "" }) {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
-  <title>SecureTodo</title>
+  <title>GonnaDo App</title>
   <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
 </head>
 <body style="margin:0;padding:0;background:#12091f;font-family:'Segoe UI',Arial,sans-serif;">
@@ -93,7 +93,7 @@ function emailShell({ preheader, body, footerNote = "" }) {
                     font-weight:800;
                     color:#fff;
                     letter-spacing:0.5px;
-                  ">✓ SecureTodo</td>
+                  ">✓ GonnaDo App</td>
                 </tr>
               </table>
             </td></tr>
@@ -114,7 +114,7 @@ function emailShell({ preheader, body, footerNote = "" }) {
               text-align:center;
             ">
               <p style="margin:0 0 4px;font-size:11px;color:#6b5a8e;">
-                This email was sent by SecureTodo · No-reply address
+                This email was sent by GonnaDo App · No-reply address
               </p>
               ${footerNote
                 ? `<p style="margin:0;font-size:11px;color:#6b5a8e;">${footerNote}</p>`
@@ -160,10 +160,10 @@ export async function sendOtpEmail(to, code, purposeLabel = "verify your email")
   const icon      = isReset ? "🔑" : is2FA ? "🛡️" : "✉️";
 
   const subject = isReset
-    ? "Your SecureTodo password reset code"
+    ? "Your GonnaDo App password reset code"
     : is2FA
-    ? "SecureTodo two-factor sign-in code"
-    : "Verify your SecureTodo account";
+    ? "GonnaDo App two-factor sign-in code"
+    : "Verify your GonnaDo App account";
 
   const text = [
     `${heading}`,
@@ -226,7 +226,7 @@ export async function sendOtpEmail(to, code, purposeLabel = "verify your email")
           line-height:1.5;
         ">
           ⏱ This code expires in <strong>${OTP_EXPIRY_MINUTES} minutes</strong>.
-          Do not share it with anyone — SecureTodo will never ask for your code.
+          Do not share it with anyone — GonnaDo App will never ask for your code.
         </td>
       </tr>
     </table>
@@ -237,9 +237,9 @@ export async function sendOtpEmail(to, code, purposeLabel = "verify your email")
   `;
 
   const html = emailShell({
-    preheader: `Your SecureTodo verification code is ${code} — expires in ${OTP_EXPIRY_MINUTES} minutes`,
+    preheader: `Your GonnaDo App verification code is ${code} — expires in ${OTP_EXPIRY_MINUTES} minutes`,
     body,
-    footerNote: "Never share this code with anyone, including SecureTodo support.",
+    footerNote: "Never share this code with anyone, including GonnaDo App support.",
   });
 
   if (!transporter) {
@@ -267,7 +267,7 @@ export async function sendNewLoginAlert(to, { ip, device, when }) {
   }
 
   const shortDevice = String(device || "unknown device").slice(0, 120);
-  const subject = "⚠️ New sign-in to your SecureTodo account";
+  const subject = "⚠️ New sign-in to your GonnaDo App account";
 
   const text = [
     `New device sign-in detected`,
@@ -356,7 +356,7 @@ export async function sendNewLoginAlert(to, { ip, device, when }) {
     </table>
 
     <p style="margin:0;font-size:12px;color:#7c6d9e;line-height:1.6;">
-      This alert was generated automatically. SecureTodo will never ask for your password or OTP codes.
+      This alert was generated automatically. GonnaDo App will never ask for your password or OTP codes.
     </p>
   `;
 
@@ -392,10 +392,10 @@ export async function sendWelcomeEmail(to, { name }) {
   }
 
   const firstName = String(name || "there").split(" ")[0];
-  const subject = "Welcome to SecureTodo 🎉";
+  const subject = "Welcome to GonnaDo App 🎉";
 
   const text = [
-    `Welcome to SecureTodo, ${firstName}!`,
+    `Welcome to GonnaDo App, ${firstName}!`,
     ``,
     `Your account is all set. You can now log in and start organising your tasks.`,
     ``,
@@ -405,7 +405,7 @@ export async function sendWelcomeEmail(to, { name }) {
     `  • Enable two-factor authentication for extra security`,
     ``,
     `Happy tasking!`,
-    `— The SecureTodo Team`,
+    `— The GonnaDo App Team`,
   ].join("\n");
 
   const body = `
@@ -417,7 +417,7 @@ export async function sendWelcomeEmail(to, { name }) {
       You're all set, ${firstName}!
     </h1>
     <p style="margin:0 0 28px;font-size:14px;color:#b8a9d9;line-height:1.7;">
-      Your SecureTodo account is ready. Start organising your tasks, set
+      Your GonnaDo App account is ready. Start organising your tasks, set
       reminders, and stay on top of everything that matters.
     </p>
 
@@ -467,7 +467,7 @@ export async function sendWelcomeEmail(to, { name }) {
   `;
 
   const html = emailShell({
-    preheader: `Welcome to SecureTodo, ${firstName}! Your account is ready.`,
+    preheader: `Welcome to GonnaDo App, ${firstName}! Your account is ready.`,
     body,
   });
 
@@ -497,12 +497,12 @@ export async function sendPasswordChangedEmail(to, { name, when, ip }) {
   }
 
   const firstName = String(name || "there").split(" ")[0];
-  const subject = "Your SecureTodo password was changed";
+  const subject = "Your GonnaDo App password was changed";
 
   const text = [
     `Hi ${firstName},`,
     ``,
-    `Your SecureTodo account password was successfully changed.`,
+    `Your GonnaDo App account password was successfully changed.`,
     ``,
     `When  : ${when}`,
     `IP    : ${ip}`,
@@ -519,7 +519,7 @@ export async function sendPasswordChangedEmail(to, { name, when, ip }) {
       Your password has been changed, ${firstName}
     </h1>
     <p style="margin:0 0 24px;font-size:14px;color:#b8a9d9;line-height:1.7;">
-      Your SecureTodo account password was successfully updated. All previous
+      Your GonnaDo App account password was successfully updated. All previous
       sessions have been signed out for your security.
     </p>
 
@@ -578,7 +578,7 @@ export async function sendPasswordChangedEmail(to, { name, when, ip }) {
   `;
 
   const html = emailShell({
-    preheader: `Your SecureTodo password was changed at ${when}. Was this you?`,
+    preheader: `Your GonnaDo App password was changed at ${when}. Was this you?`,
     body,
     footerNote: "If you did not make this change, contact support immediately.",
   });
@@ -618,52 +618,52 @@ export async function sendAccountStatusEmail(to, { name, action, reason }) {
 
   const configs = {
     locked: {
-      subject: "Your SecureTodo account has been temporarily locked",
+      subject: "Your GonnaDo App account has been temporarily locked",
       badge: "⚠️ ACCOUNT LOCKED",
       badgeColor: "#f59e0b",
       badgeBg: "rgba(245,158,11,0.15)",
       badgeBorder: "rgba(245,158,11,0.35)",
       heading: `Your account has been temporarily locked, ${firstName}`,
-      lead: "Your SecureTodo account has been temporarily restricted by our security team. You will not be able to sign in until it is unlocked.",
+      lead: "Your GonnaDo App account has been temporarily restricted by our security team. You will not be able to sign in until it is unlocked.",
       noteColor: "#f59e0b",
       noteBg: "rgba(245,158,11,0.09)",
       noteBorder: "#f59e0b",
       noteText: "If you believe this is a mistake or need help, please contact our support team.",
     },
     unlocked: {
-      subject: "Your SecureTodo account has been unlocked",
+      subject: "Your GonnaDo App account has been unlocked",
       badge: "✅ ACCOUNT RESTORED",
       badgeColor: "#10b981",
       badgeBg: "rgba(16,185,129,0.15)",
       badgeBorder: "rgba(16,185,129,0.35)",
       heading: `Your account access has been restored, ${firstName}`,
-      lead: "Great news! Your SecureTodo account has been unlocked. You can now sign in and use all features normally.",
+      lead: "Great news! Your GonnaDo App account has been unlocked. You can now sign in and use all features normally.",
       noteColor: "#10b981",
       noteBg: "rgba(16,185,129,0.08)",
       noteBorder: "#10b981",
       noteText: "If you experience any issues signing in, please contact our support team.",
     },
     deactivated: {
-      subject: "Your SecureTodo account has been deactivated",
+      subject: "Your GonnaDo App account has been deactivated",
       badge: "🚫 ACCOUNT DEACTIVATED",
       badgeColor: "#ef4444",
       badgeBg: "rgba(239,68,68,0.15)",
       badgeBorder: "rgba(239,68,68,0.35)",
       heading: `Your account has been deactivated, ${firstName}`,
-      lead: "Your SecureTodo account has been deactivated. All active sessions have been ended and you will no longer be able to sign in.",
+      lead: "Your GonnaDo App account has been deactivated. All active sessions have been ended and you will no longer be able to sign in.",
       noteColor: "#ef4444",
       noteBg: "rgba(239,68,68,0.09)",
       noteBorder: "#ef4444",
       noteText: "If you believe this was done in error, please contact our support team to appeal.",
     },
     reactivated: {
-      subject: "Your SecureTodo account has been reactivated",
+      subject: "Your GonnaDo App account has been reactivated",
       badge: "✅ ACCOUNT REACTIVATED",
       badgeColor: "#8b5cf6",
       badgeBg: "rgba(139,92,246,0.15)",
       badgeBorder: "rgba(139,92,246,0.35)",
       heading: `Welcome back — your account is active again, ${firstName}`,
-      lead: "Your SecureTodo account has been reactivated. You can now sign in and access all your todos and settings.",
+      lead: "Your GonnaDo App account has been reactivated. You can now sign in and access all your todos and settings.",
       noteColor: "#8b5cf6",
       noteBg: "rgba(139,92,246,0.09)",
       noteBorder: "#8b5cf6",
@@ -680,7 +680,7 @@ export async function sendAccountStatusEmail(to, { name, action, reason }) {
   const text = [
     `Hi ${firstName},`,
     ``,
-    `Your SecureTodo account has been ${action}.`,
+    `Your GonnaDo App account has been ${action}.`,
     reason ? `Reason: ${reason}` : "",
     ``,
     cfg.noteText,
@@ -741,14 +741,14 @@ export async function sendAccountStatusEmail(to, { name, action, reason }) {
     </table>
 
     <p style="margin:0;font-size:12px;color:#7c6d9e;line-height:1.6;">
-      This notification was sent because a change was made to your account by the SecureTodo team.
+      This notification was sent because a change was made to your account by the GonnaDo App team.
     </p>
   `;
 
   const html = emailShell({
-    preheader: `Your SecureTodo account has been ${action}.`,
+    preheader: `Your GonnaDo App account has been ${action}.`,
     body,
-    footerNote: "This is an automated account notification from SecureTodo.",
+    footerNote: "This is an automated account notification from GonnaDo App.",
   });
 
   try {

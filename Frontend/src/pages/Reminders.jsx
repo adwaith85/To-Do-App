@@ -87,7 +87,7 @@ export default function Reminders() {
         </header>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <div className="space-y-6">
+          <div className="order-2 space-y-6 lg:order-1">
             {selectedDate && (
               <div className="flex items-center gap-3 rounded-2xl border border-brand-400/20 bg-brand-500/10 px-4 py-3">
                 <Calendar className="h-4 w-4 text-brand-400" />
@@ -147,7 +147,7 @@ export default function Reminders() {
             )}
           </div>
 
-          <div className="lg:sticky lg:top-20">
+          <div className="order-1 lg:order-2 lg:sticky lg:top-20">
             <CalendarComponent
               todos={reminderTodos}
               onDateClick={setSelectedDate}

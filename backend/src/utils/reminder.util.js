@@ -8,7 +8,7 @@ const SMTP_HOST = process.env.SMTP_HOST || "";
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
 const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
-const MAIL_FROM = process.env.MAIL_FROM || "Secure Todo <no-reply@todoapp.local>";
+const MAIL_FROM = process.env.MAIL_FROM || "GonnaDo App <no-reply@todoapp.local>";
 const MONGO_URI = process.env.MONGO_URI;
 
 let transporter = null;
@@ -126,7 +126,7 @@ async function sendReminderEmail(user, todo) {
                     border-radius:10px;
                     padding:7px 14px;
                     font-size:13px;font-weight:800;color:#fff;letter-spacing:0.5px;
-                  ">✓ SecureTodo</td>
+                  ">✓ GonnaDo App</td>
                   <td style="padding-left:12px;">
                     <span style="
                       background:rgba(6,182,212,0.15);
@@ -203,7 +203,7 @@ async function sendReminderEmail(user, todo) {
               text-align:center;
             ">
               <p style="margin:0;font-size:11px;color:#6b5a8e;">
-                Sent by SecureTodo · Manage reminders in your account settings
+                Sent by GonnaDo App · Manage reminders in your account settings
               </p>
             </td></tr>
           </table>

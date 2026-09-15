@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { CheckCircle, RotateCcw, Check, Pin, Calendar, Clock } from "lucide-react";
+import { CheckCircle, RotateCcw, Check, Pin, Calendar, Clock, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import client from "../api/client";
 import Spinner from "../components/Spinner";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { isWhiteTheme } from "../utils/theme";
 import RichDescription from "../components/RichDescription";
 
@@ -14,6 +15,8 @@ function fmtDateTime(iso) {
 
 export default function Completed() {
   const [todos, setTodos] = useState(null);
+  const [confirmId, setConfirmId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     client
@@ -29,6 +32,21 @@ export default function Completed() {
       setTodos((prev) => prev?.filter((t) => t._id !== id));
     } catch {
       toast.error("Could not reopen task");
+    }
+  };
+
+  const remove = async () => {
+    const id = confirmId;
+    setDeleting(true);
+    try {
+      await client.delete(`/api/todos/${id}`);
+      setTodos((prev) => prev?.filter((t) => t._id !== id));
+      toast.success("Task deleted");
+    } catch {
+      toast.error("Could not delete the task");
+    } finally {
+      setDeleting(false);
+      setConfirmId(null);
     }
   };
 
@@ -123,6 +141,13 @@ export default function Completed() {
                     >
                       <RotateCcw className="h-3 w-3" /> Reopen
                     </button>
+                    <button
+                      onClick={() => setConfirmId(todo._id)}
+                      title="Delete"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-400/30 bg-rose-400/10 px-2.5 py-1.5 text-[11px] font-semibold text-rose-300 transition hover:bg-rose-400/20"
+                    >
+                      <Trash2 className="h-3 w-3" /> Delete
+                    </button>
                   </div>
                 </div>
               );
@@ -130,6 +155,16 @@ export default function Completed() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={Boolean(confirmId)}
+        title="Delete task?"
+        message="This task will be permanently deleted. This cannot be undone."
+        confirmLabel="Delete"
+        loading={deleting}
+        onCancel={() => setConfirmId(null)}
+        onConfirm={remove}
+      />
     </div>
   );
 }

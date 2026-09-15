@@ -29,6 +29,21 @@ const isTest = process.env.NODE_ENV === "test";
 export async function issueOtp(type, target, userId = null) {
   const code = generateOtpCode();
 
+
+  const SEND_GUARD_SECONDS = 30;
+  const existing = await Otp.findOne({ target, type });
+  const justIssued =
+    existing &&
+    !existing.used &&
+    !existing.isExpired() &&
+    (Date.now() - existing.updatedAt.getTime()) / 1000 < SEND_GUARD_SECONDS;
+
+  if (justIssued) {
+    // Already sent moments ago — return without creating a new code or email.
+    const devAllowed = !isProd && !isTest;
+    return { delivered: true, ...(devAllowed && { devCode: undefined }) };
+  }
+
   await Otp.findOneAndUpdate(
     { target, type },
     {
@@ -43,7 +58,16 @@ export async function issueOtp(type, target, userId = null) {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
-  const { delivered } = await sendOtpEmail(target, code);
+  // Map OTP type to a human-readable purpose label for the email.
+  const purposeByType = {
+    email:          "verify your email",
+    phone:          "verify your phone",
+    password_reset: "reset your password",
+    login_2fa:      "complete your sign-in",
+  };
+  const purposeLabel = purposeByType[type] || "verify your identity";
+
+  const { delivered } = await sendOtpEmail(target, code, purposeLabel);
 
   // Dev fallback: expose the code only when no real provider exists.
   const devAllowed = !isProd && !isTest;

@@ -39,7 +39,7 @@ export default function Navbar() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-400 to-accent-500 text-sm font-black text-white shadow-glow">
               <CheckCircle className="h-4 w-4" />
             </div>
-            <span className="text-sm font-bold tracking-tight text-white hidden sm:block">SecureTodo</span>
+            <span className="text-sm font-bold tracking-tight text-white hidden sm:block">GonnaDo App</span>
           </NavLink>
 
           <nav className="hidden lg:flex items-center gap-1 ml-auto">
@@ -89,7 +89,7 @@ export default function Navbar() {
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-400 to-accent-500 text-sm font-black text-white">
                   <CheckCircle className="h-4 w-4" />
                 </div>
-                <span className="text-sm font-bold text-white">SecureTodo</span>
+                <span className="text-sm font-bold text-white">GonnaDo App</span>
               </div>
               <button onClick={() => setDrawerOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white">
                 <X className="h-5 w-5" />
