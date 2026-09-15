@@ -30,10 +30,10 @@
   --color-accent-600: #0d9fb4;
 
   /* Neutral "ink" surfaces */
-  --color-ink-700: #212c4b;
-  --color-ink-800: #18213c;
-  --color-ink-900: #10172c;
-  --color-ink-950: #090e20;
+  --color-ink-700: #3a2840;
+  --color-ink-800: #2c1f34;
+  --color-ink-900: #201629;
+  --color-ink-950: #140d1c;
 
   --shadow-glow: 0 0 40px -8px rgb(116 94 246 / 0.55);
 }
@@ -49,9 +49,9 @@
   body {
     @apply min-h-screen bg-ink-800 font-sans text-slate-100 antialiased;
     background-image:
-      radial-gradient(52rem 36rem at 85% -10%, rgb(116 94 246 / 0.12), transparent 60%),
-      radial-gradient(44rem 30rem at -12% 108%, rgb(30 195 212 / 0.08), transparent 58%),
-      radial-gradient(38rem 26rem at 50% 118%, rgb(139 131 250 / 0.06), transparent 62%);
+      radial-gradient(52rem 36rem at 80% -8%,  rgb(180 100 220 / 0.13), transparent 58%),
+      radial-gradient(46rem 32rem at -10% 105%, rgb(140  80 190 / 0.10), transparent 56%),
+      radial-gradient(40rem 28rem at 50% 115%,  rgb(200 130 240 / 0.07), transparent 60%);
     background-attachment: fixed;
   }
   ::selection {

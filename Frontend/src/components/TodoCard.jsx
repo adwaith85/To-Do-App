@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { Pin, Calendar, Clock, Paperclip, Check, Archive, Trash2, History, Loader2, GripVertical } from "lucide-react";
 import { isWhiteTheme } from "../utils/theme";
 import RichDescription from "./RichDescription";
@@ -38,19 +38,6 @@ export default function TodoCard({ todo, section, onToggle, onDelete, onArchive,
   const metaDate = showUpdated ? updatedAt : todo.createdAt;
 
   const bodyRef = useRef(null);
-  const [contentClipped, setContentClipped] = useState(false);
-
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    let alive = true;
-    const check = () => { if (alive) setContentClipped(el.scrollHeight - el.clientHeight > 1); };
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    document.fonts?.ready?.then(check);
-    return () => { alive = false; ro.disconnect(); };
-  }, [todo]);
 
   return (
     <div
@@ -161,17 +148,13 @@ export default function TodoCard({ todo, section, onToggle, onDelete, onArchive,
                   <Paperclip className="h-2.5 w-2.5" /> {todo.attachments.length}
                 </span>
               )}
-            </div>
-              {/* Hint that more content is inside — open the card to see it */}
-              {contentClipped && (
-                <div className={`pointer-events-none absolute inset-x-0 bottom-0 h-6 ${light ? "bg-gradient-to-t from-white to-transparent" : "bg-gradient-to-t from-black/40 to-transparent"}`} />
-              )}
-          </div>
+</div>
         </div>
+      </div>
       </div>
 
       {/* Bottom bar — stacks on mobile, single row on desktop */}
-      <div className={`mt-3 flex flex-col gap-2.5 border-t pt-2.5 sm:flex-row sm:items-center sm:justify-between ${light ? "border-slate-200" : "border-white/5"}`}>
+      <div className={`mt-3 hidden flex-col gap-2.5 border-t pt-2.5 sm:flex sm:flex-row sm:items-center sm:justify-between ${light ? "border-slate-200" : "border-white/5"}`}>
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-500">
           {completing ? (
             <span className="inline-flex items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 font-semibold text-emerald-400">
