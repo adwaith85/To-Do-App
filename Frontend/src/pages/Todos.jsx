@@ -115,7 +115,7 @@ export default function Todos() {
     const compute = () => {
       const w = window.innerWidth;
       if (layout === "vertical") setColumnCount(1);
-      else setColumnCount(w >= 1024 ? 3 : w >= 640 ? 2 : 1);
+      else setColumnCount(w >= 1024 ? 3 : 2);
     };
     compute();
     window.addEventListener("resize", compute);

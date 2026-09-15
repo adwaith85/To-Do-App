@@ -80,7 +80,13 @@ export default function TodoMasonry({
     <div
       data-drop-zone={section}
       onDragOver={(e) => e.preventDefault()}
-      className="flex flex-col sm:flex-row sm:items-start sm:gap-3"
+      className={
+        columns === 1
+          ? "flex flex-col gap-3"
+          : columns === 2
+            ? "grid w-full grid-cols-2 items-start gap-3 sm:flex sm:flex-row sm:w-auto"
+            : "flex flex-col gap-3 sm:flex-row sm:items-start"
+      }
     >
       {cols.map((col, colIndex) => (
         <div key={colIndex} className="flex min-w-0 flex-1 flex-col gap-3">
