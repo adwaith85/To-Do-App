@@ -15,7 +15,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { verifyPassword } from "../utils/password.util.js";
 import { logAuthEvent, getClientIp, getDevice } from "../utils/history.util.js";
 import { assertCaptcha, verifyCaptcha } from "../utils/captcha.util.js";
-import { sendNewLoginAlert, sendOtpEmail } from "../utils/mailer.util.js";
+import { sendNewLoginAlert, sendOtpEmail, sendWelcomeEmail, sendPasswordChangedEmail } from "../utils/mailer.util.js";
 import {
   issueSession,
   rotateRefreshToken,
@@ -179,6 +179,11 @@ export const setPassword = asyncHandler(async (req, res) => {
   await user.save();
 
   await logAuthEvent({ userId: user._id, action: "PASSWORD_CREATED", req });
+
+  // Fire-and-forget welcome email — failure must not block the response.
+  sendWelcomeEmail(user.email, { name: user.name }).catch((err) =>
+    console.error("[auth] Welcome email failed:", err.message)
+  );
 
   res.status(200).json({
     success: true,
@@ -605,6 +610,13 @@ export const resetPassword = asyncHandler(async (req, res) => {
   clearRefreshCookie(res);
 
   await logAuthEvent({ userId: user._id, action: "PASSWORD_RESET_SUCCESS", req });
+
+  // Fire-and-forget password-changed confirmation — failure must not block the response.
+  sendPasswordChangedEmail(user.email, {
+    name: user.name,
+    when: new Date().toUTCString(),
+    ip: getClientIp(req),
+  }).catch((err) => console.error("[auth] Password-changed email failed:", err.message));
 
   res.status(200).json({
     success: true,

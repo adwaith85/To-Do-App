@@ -23,6 +23,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { getClientIp, getDevice } from "../utils/history.util.js";
 import { logAdminAction } from "../utils/adminAudit.util.js";
+import { sendAccountStatusEmail } from "../utils/mailer.util.js";
 
 const LOCK_MINUTES = parseInt(process.env.LOCK_TIME_MINUTES || "60", 10);
 
@@ -214,6 +215,13 @@ export const lockUser = asyncHandler(async (req, res) => {
     targetId: user._id, details: { lockMinutes: LOCK_MINUTES }, req,
   });
 
+  // Notify the user — being locked out is something they need to know.
+  sendAccountStatusEmail(user.email, {
+    name: user.name,
+    action: "locked",
+    reason: req.body.reason || null,
+  }).catch((err) => console.error("[admin] lock-user email failed:", err.message));
+
   res.status(200).json({ success: true, message: "Account locked.", data: { user: adminUserView(user) } });
 });
 
@@ -228,6 +236,12 @@ export const unlockUser = asyncHandler(async (req, res) => {
     adminId: req.user._id, action: "unlock_user", targetType: "User",
     targetId: user._id, details: {}, req,
   });
+
+  // Notify the user — restoring access is something they'll want to know.
+  sendAccountStatusEmail(user.email, {
+    name: user.name,
+    action: "unlocked",
+  }).catch((err) => console.error("[admin] unlock-user email failed:", err.message));
 
   res.status(200).json({ success: true, message: "Account unlocked.", data: { user: adminUserView(user) } });
 });
@@ -245,6 +259,13 @@ export const deactivateUser = asyncHandler(async (req, res) => {
     targetId: user._id, details: {}, req,
   });
 
+  // Notify the user — deactivation directly affects their ability to use the service.
+  sendAccountStatusEmail(user.email, {
+    name: user.name,
+    action: "deactivated",
+    reason: req.body.reason || null,
+  }).catch((err) => console.error("[admin] deactivate-user email failed:", err.message));
+
   res.status(200).json({ success: true, message: "Account deactivated.", data: { user: adminUserView(user) } });
 });
 
@@ -261,6 +282,12 @@ export const reactivateUser = asyncHandler(async (req, res) => {
     adminId: req.user._id, action: "reactivate_user", targetType: "User",
     targetId: user._id, details: {}, req,
   });
+
+  // Notify the user — their account being restored is genuinely useful to know.
+  sendAccountStatusEmail(user.email, {
+    name: user.name,
+    action: "reactivated",
+  }).catch((err) => console.error("[admin] reactivate-user email failed:", err.message));
 
   res.status(200).json({ success: true, message: "Account reactivated.", data: { user: adminUserView(user) } });
 });

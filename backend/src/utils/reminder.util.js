@@ -45,151 +45,176 @@ async function sendReminderEmail(user, todo) {
     return false;
   }
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-    </head>
+  // Build checklist items for description
+  const descriptionHtml = todo.description
+    ? todo.description
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => {
+          const isCompleted = line.startsWith("[x] ");
+          const isItem =
+            line.startsWith("[x] ") ||
+            line.startsWith("[ ] ") ||
+            line.startsWith("• ");
 
-    <body style="margin:0;padding:0;background:#0f172a;font-family:'Segoe UI',sans-serif;">
-      <div style="
-        max-width:480px;
-        margin:40px auto;
-        background:linear-gradient(135deg,#1e293b,#0f172a);
-        border-radius:16px;
-        border:1px solid rgba(255,255,255,0.1);
-        padding:32px;
-        color:#e2e8f0;
-      ">
+          if (isItem) {
+            const text = line.replace(/^(\[x\]|\[ \]|\u2022)\s*/, "");
+            return `
+              <tr>
+                <td style="padding:5px 0;vertical-align:top;">
+                  <table cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td style="
+                        width:16px;
+                        height:16px;
+                        border-radius:4px;
+                        border:1.5px solid ${isCompleted ? "#8b5cf6" : "rgba(139,92,246,0.4)"};
+                        background:${isCompleted ? "rgba(139,92,246,0.3)" : "transparent"};
+                        text-align:center;
+                        vertical-align:middle;
+                        font-size:10px;
+                        color:#a78bfa;
+                        margin-right:10px;
+                      ">${isCompleted ? "✓" : ""}</td>
+                      <td style="padding-left:10px;font-size:13px;color:${isCompleted ? "#7c6d9e" : "#c4b5fd"};
+                        ${isCompleted ? "text-decoration:line-through;" : ""}line-height:1.5;">${text}</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>`;
+          }
 
-        <div style="text-align:center;margin-bottom:24px;">
-          <div style="
-            display:inline-block;
-            background:linear-gradient(135deg,#06b6d4,#10b981);
-            border-radius:12px;
-            padding:12px 20px;
-            color:#0f172a;
-            font-weight:800;
-            font-size:18px;
-          ">
-            Todo Reminder
-          </div>
-        </div>
+          return `
+            <tr><td style="padding:4px 0;font-size:13px;color:#b8a9d9;line-height:1.6;">${line}</td></tr>`;
+        })
+        .join("")
+    : "";
 
-        <h2 style="
-          font-size:16px;
-          font-weight:600;
-          margin:0 0 16px;
-          color:#f1f5f9;
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Todo Reminder</title>
+</head>
+<body style="margin:0;padding:0;background:#12091f;font-family:'Segoe UI',Arial,sans-serif;">
+
+  <!-- preheader -->
+  <div style="display:none;max-height:0;overflow:hidden;color:#12091f;">
+    Reminder: ${todo.task} — due ${new Date(todo.reminderAt).toLocaleString()}&zwnj;&nbsp;
+  </div>
+
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#12091f;min-height:100vh;">
+    <tr><td align="center" style="padding:40px 16px;">
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
+        <tr><td style="
+          background:linear-gradient(145deg,#1e1035 0%,#2a1550 60%,#1a0d3a 100%);
+          border-radius:20px;
+          border:1px solid rgba(139,92,246,0.22);
+          box-shadow:0 24px 60px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.06);
+          overflow:hidden;
         ">
-          ${todo.task}
-        </h2>
 
-        ${
-          todo.description
-            ? `
-              <div style="margin:0 0 16px;">
-                ${todo.description
-                  .split("\n")
-                  .filter((line) => line.trim())
-                  .map((line) => {
-                    if (
-                      line.startsWith("[x] ") ||
-                      line.startsWith("[ ] ") ||
-                      line.startsWith("• ")
-                    ) {
-                      const completed = line.startsWith("[x] ");
+          <!-- logo strip -->
+          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="padding:24px 32px 20px;border-bottom:1px solid rgba(139,92,246,0.15);">
+              <table cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="
+                    background:linear-gradient(135deg,#7c3aed,#a855f7);
+                    border-radius:10px;
+                    padding:7px 14px;
+                    font-size:13px;font-weight:800;color:#fff;letter-spacing:0.5px;
+                  ">✓ SecureTodo</td>
+                  <td style="padding-left:12px;">
+                    <span style="
+                      background:rgba(6,182,212,0.15);
+                      border:1px solid rgba(6,182,212,0.35);
+                      border-radius:6px;
+                      padding:4px 10px;
+                      font-size:11px;font-weight:700;color:#06b6d4;letter-spacing:0.5px;
+                    ">⏰ REMINDER</span>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
 
-                      return `
-                        <span style="
-                          display:block;
-                          font-size:14px;
-                          line-height:1.6;
-                          padding-left:14px;
-                          position:relative;
-                          ${
-                            completed
-                              ? "color:#64748b;text-decoration:line-through;"
-                              : "color:#94a3b8;"
-                          }
-                        ">
-                          <span style="
-                            position:absolute;
-                            left:0;
-                            top:8px;
-                            width:5px;
-                            height:5px;
-                            background:#a78bfa;
-                            transform:rotate(45deg);
-                          "></span>
+          <!-- body -->
+          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="padding:28px 32px;">
 
-                          ${completed ? "&#10003; " : ""}
+              <p style="margin:0 0 6px;font-size:11px;color:#9d8fc1;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;">
+                Task Reminder
+              </p>
+              <h1 style="margin:0 0 18px;font-size:20px;font-weight:700;color:#ede9fe;line-height:1.3;">
+                ${todo.task}
+              </h1>
 
-                          ${line.replace(
-                            /^(\[x\]|\[ \]|\u2022)\s*/,
-                            ""
-                          )}
-                        </span>
-                      `;
-                    }
+              ${descriptionHtml ? `
+              <!-- checklist -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="
+                background:rgba(139,92,246,0.07);
+                border:1px solid rgba(139,92,246,0.18);
+                border-radius:12px;
+                padding:14px 16px;
+                margin:0 0 20px;
+              ">
+                <tr><td>
+                  <p style="margin:0 0 10px;font-size:11px;color:#9d8fc1;text-transform:uppercase;letter-spacing:1px;font-weight:600;">
+                    Sub-tasks
+                  </p>
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    ${descriptionHtml}
+                  </table>
+                </td></tr>
+              </table>
+              ` : ""}
 
-                    return `
-                      <p style="
-                        font-size:14px;
-                        color:#94a3b8;
-                        margin:0 0 8px;
-                        line-height:1.6;
-                      ">
-                        ${line}
-                      </p>
-                    `;
-                  })
-                  .join("")}
-              </div>
-            `
-            : ""
-        }
+              <!-- due time pill -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="
+                background:rgba(6,182,212,0.1);
+                border:1.5px solid rgba(6,182,212,0.3);
+                border-radius:12px;
+                padding:16px 18px;
+                margin:0 0 8px;
+              ">
+                <tr>
+                  <td style="font-size:11px;color:#9d8fc1;text-transform:uppercase;letter-spacing:1px;padding-bottom:6px;">
+                    ⏰ &nbsp;Reminder scheduled for
+                  </td>
+                </tr>
+                <tr>
+                  <td style="font-size:16px;font-weight:700;color:#06b6d4;">
+                    ${new Date(todo.reminderAt).toLocaleString()}
+                  </td>
+                </tr>
+              </table>
 
-        <div style="
-          background:rgba(255,255,255,0.05);
-          border-radius:10px;
-          padding:16px;
-          margin:16px 0;
-        ">
-          <p style="
-            font-size:12px;
-            color:#64748b;
-            margin:0 0 8px;
-            text-transform:uppercase;
-            letter-spacing:0.05em;
-          ">
-            Reminder scheduled for
-          </p>
+            </td></tr>
+          </table>
 
-          <p style="
-            font-size:14px;
-            font-weight:600;
-            color:#06b6d4;
-            margin:0;
-          ">
-            ${new Date(todo.reminderAt).toLocaleString()}
-          </p>
-        </div>
+          <!-- footer -->
+          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="
+              padding:16px 32px 22px;
+              border-top:1px solid rgba(139,92,246,0.12);
+              text-align:center;
+            ">
+              <p style="margin:0;font-size:11px;color:#6b5a8e;">
+                Sent by SecureTodo · Manage reminders in your account settings
+              </p>
+            </td></tr>
+          </table>
 
-        <p style="
-          font-size:12px;
-          color:#475569;
-          text-align:center;
-          margin:24px 0 0;
-        ">
-          Sent by SecureTodo
-        </p>
+        </td></tr>
+      </table>
 
-      </div>
-    </body>
-    </html>
-  `;
+    </td></tr>
+  </table>
+</body>
+</html>`;
 
   try {
     await transport.sendMail({
