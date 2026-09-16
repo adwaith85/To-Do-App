@@ -1,24 +1,27 @@
 /**
  * Admin Dashboard — system overview.
  *
- * - Metric cards with honest ↑/↓ trend chips (today vs yesterday) computed
- *   from the API's `deltas`.
+ * - Metric cards with honest ↑/↓ trend chips (today vs yesterday).
  * - recharts visuals: signups area chart, login success/fail trend, todos
- *   by status donut.
- * - Polls the lightweight overview + trend endpoints every 30s so the
- *   numbers feel live without a websocket.
+ *   by status donut + priority bars.
+ * - Auto-refreshes every 30s via the shared usePoll hook; shows a green
+ *   live indicator, skeleton loaders, smooth staggered entrance and a
+ *   rotating heartbeat animation on refresh so the numbers always feel live.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import {
   Users, KeyRound, ListChecks, ShieldAlert, Activity, Database, Timer, Zap,
+  RefreshCw, MailCheck, MailX,
 } from "lucide-react";
 import client from "../../api/client";
 import Spinner from "../../components/Spinner";
-import { Panel, PageHeader, Badge, Empty } from "../../components/admin/ui";
+import {
+  Panel, PageHeader, Badge, Empty, Skeleton, LiveIndicator,
+} from "../../components/admin/ui";
+import usePoll from "../../components/admin/usePoll";
 
 const STATUS_COLORS = {
   pending: "#60a5fa",
@@ -52,69 +55,65 @@ function ChartTip({ active, payload, label }) {
   );
 }
 
-/** Generic 30-second polling wrapper. */
-function usePoll(fetcher, deps = []) {
-  const [data, setData] = useState(null);
-  const [loaded, setLoaded] = useState(false);
-  const alive = useRef(true);
-
-  const load = useCallback(async () => {
-    try {
-      const d = await fetcher();
-      if (alive.current) setData(d);
-    } catch { /* keep last good data on transient failures */ }
-    finally { if (alive.current) setLoaded(true); }
-  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    alive.current = true;
-    load();
-    const t = setInterval(load, 30_000);
-    return () => { alive.current = false; clearInterval(t); };
-  }, [load]);
-
-  return { data, loaded };
-}
-
 export default function AdminDashboard() {
-  const { data: overview, loaded } = usePoll(
+  const overviewPoll = usePoll(
     () => client.get("/api/admin/stats/overview").then((r) => r.data.data),
     []
   );
-  const { data: signups } = usePoll(
-    () => client.get("/api/admin/stats/signups", { params: { granularity: "day", from: new Date(Date.now() - 90 * 86400e3).toISOString(), to: new Date().toISOString() } }).then((r) => r.data.data),
+  const signupsPoll = usePoll(
+    () => client.get("/api/admin/stats/signups", {
+      params: {
+        granularity: "day",
+        from: new Date(Date.now() - 90 * 86400e3).toISOString(),
+        to: new Date().toISOString(),
+      },
+    }).then((r) => r.data.data),
     []
   );
-  const { data: loginTrend } = usePoll(
+  const loginPoll = usePoll(
     () => client.get("/api/admin/stats/login-trend", { params: { days: 14 } }).then((r) => r.data.data),
     []
   );
-  const { data: todoStats } = usePoll(
+  const todosPoll = usePoll(
     () => client.get("/api/admin/todos/stats").then((r) => r.data.data),
     []
   );
 
-  if (!loaded && !overview) return <Spinner label="Loading dashboard…" />;
+  const { data: overview, loaded, refreshing, lastUpdated, refresh } = overviewPoll;
+  const { data: signups } = signupsPoll;
+  const { data: loginTrend } = loginPoll;
+  const { data: todoStats } = todosPoll;
 
-  // Real per-day signup numbers for the trend chips.
   const buckets = (signups?.points || []).map((p) => ({ ...p, ts: new Date(p.bucket).getTime() }));
-  const pointsByDay = buckets.length ? buckets.slice(-2) : [];
-  const newToday = pointsByDay[1]?.count ?? 0;
+  const newToday = buckets.slice(-2)[1]?.count ?? 0;
 
   const pieData = Object.entries(todoStats?.byStatus || {}).map(([k, v]) => ({
     key: k, name: k.replace("_", " "), value: v,
   }));
   const statusTotal = pieData.reduce((s, d) => s + d.value, 0);
-
   const todayStr = new Date().toDateString();
+
+  const loading = !loaded && !overview;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="System overview"
-        subtitle={`Live snapshot · updated every 30 seconds · ${todayStr}`}
+        subtitle={`Live snapshot · updates every 30s · ${todayStr}`}
         icon={Activity}
-        action={<Badge tone="green" dot>connected</Badge>}
+        action={
+          <div className="flex items-center gap-2">
+            <LiveIndicator lastUpdated={lastUpdated} refreshing={refreshing} />
+            <button
+              onClick={refresh}
+              className="admin-btn-secondary !px-2.5 !py-1.5 text-xs"
+              title="Refresh now"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+          </div>
+        }
       />
 
       {/* ── Metric cards ── */}
@@ -129,11 +128,21 @@ export default function AdminDashboard() {
           trend={overview?.deltas?.failedLogins} hint="account lock-outs watch" danger />
       </div>
 
+      {/* ── User breakdown mini-stat row ── */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <MiniStat label="Verified users" value={overview?.users?.verified ?? "…"} icon={MailCheck} tone="text-emerald-400" />
+        <MiniStat label="Unverified" value={overview?.users?.unverified ?? "…"} icon={MailX} tone="text-amber-400" />
+        <MiniStat label="Admins" value={overview?.users?.admins ?? "…"} icon={ShieldAlert} tone="text-violet-300" />
+        <MiniStat label="Deactivated" value={overview?.users?.deactivated ?? "…"} icon={ShieldAlert} tone="text-rose-400" />
+      </div>
+
       {/* ── Charts row ── */}
       <div className="grid gap-6 xl:grid-cols-3">
         <Panel title="New signups" icon={Users} className="xl:col-span-2">
-          {!signups || !signups.points.length ? <Empty text="No signups in range yet." /> : (
-            <div className="h-64">
+          {loading ? <Skeleton lines={4} /> : !signups || !signups.points.length ? (
+            <Empty text="No signups in range yet." />
+          ) : (
+            <div className="h-64 transition-all duration-300">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={signups.points} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
                   <defs>
@@ -154,7 +163,9 @@ export default function AdminDashboard() {
         </Panel>
 
         <Panel title="Login success / fail trend" icon={KeyRound}>
-          {!loginTrend || !loginTrend.points.length ? <Empty text="No login events recorded." /> : (
+          {loading ? <Skeleton lines={4} /> : !loginTrend || !loginTrend.points.length ? (
+            <Empty text="No login events recorded." />
+          ) : (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={loginTrend.points} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
@@ -162,8 +173,8 @@ export default function AdminDashboard() {
                   <XAxis dataKey="bucket" tick={CHART_TICK} tickLine={false} axisLine={false} minTickGap={20} />
                   <YAxis tick={CHART_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip content={<ChartTip />} />
-                  <Line type="monotone" dataKey="success" name="success" stroke="#34d399" strokeWidth={2.5} dot={false} />
-                  <Line type="monotone" dataKey="failed" name="failed" stroke="#fb7185" strokeWidth={2.5} dot={false} />
+                  <Line type="monotone" dataKey="success" name="success" stroke="#34d399" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="failed" name="failed" stroke="#fb7185" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -174,7 +185,7 @@ export default function AdminDashboard() {
       {/* ── Bottom row ── */}
       <div className="grid gap-6 lg:grid-cols-3">
         <Panel title="Todos by status" icon={ListChecks}>
-          {statusTotal === 0 ? <Empty text="No todos yet." /> : (
+          {loading ? <Skeleton lines={3} /> : statusTotal === 0 ? <Empty text="No todos yet." /> : (
             <>
               <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
@@ -199,40 +210,42 @@ export default function AdminDashboard() {
         </Panel>
 
         <Panel title="System health" icon={Database}>
-          <div className="space-y-2.5">
-            {[
-              { k: "MongoDB", v: overview?.dbConnected ? "Connected" : "Down", tone: overview?.dbConnected ? "green" : "red", icon: Database },
-              { k: "Server uptime", v: fmtUptime(overview?.uptime), tone: "brand", icon: Timer },
-              { k: "Active sessions", v: overview?.activeSessions ?? 0, tone: "cyan", icon: KeyRound },
-              { k: "OTP requests today", v: overview?.todays?.otpRequests ?? 0, tone: "amber", icon: Zap },
-            ].map((row) => (
-              <div key={row.k} className="flex items-center justify-between rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3">
-                <span className="flex items-center gap-2 text-sm text-slate-300"><row.icon className="h-4 w-4 text-slate-500" />{row.k}</span>
-                <Badge tone={row.tone}>{row.v}</Badge>
-              </div>
-            ))}
-          </div>
+          {loading ? <Skeleton lines={4} /> : (
+            <div className="space-y-2.5">
+              {[
+                { k: "MongoDB", v: overview?.dbConnected ? "Connected" : "Down", tone: overview?.dbConnected ? "green" : "red", icon: Database },
+                { k: "Server uptime", v: fmtUptime(overview?.uptime), tone: "brand", icon: Timer },
+                { k: "Active sessions", v: overview?.activeSessions ?? 0, tone: "cyan", icon: KeyRound },
+                { k: "OTP requests today", v: overview?.todays?.otpRequests ?? 0, tone: "amber", icon: Zap },
+              ].map((row) => (
+                <div key={row.k} className="flex items-center justify-between rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3 hover:border-slate-400/25">
+                  <span className="flex items-center gap-2 text-sm text-slate-300"><row.icon className="h-4 w-4 text-slate-500" />{row.k}</span>
+                  <Badge tone={row.tone}>{row.v}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
         </Panel>
 
         <Panel title="Todo volume by priority" icon={ListChecks}>
-          <PriorityBars data={todoStats?.byPriority || {}} />
+          {loading ? <Skeleton lines={3} /> : <PriorityBars data={todoStats?.byPriority || {}} />}
         </Panel>
       </div>
     </div>
   );
 }
 
-/** Thin wrapper so StatCard-style trend chips + icons render cleanly. */
+/** Big metric card with ↑/↓ trend chip + staggered entrance animation. */
 function Card({ icon, label, value, trend, hint, danger }) {
   const Icon = icon;
   const isGood = trend > 0;
   const isBad = trend < 0;
   return (
-    <div className="admin-glass admin-glass-hover relative overflow-hidden p-5">
+    <div className="admin-glass admin-glass-hover animate-stagger relative overflow-hidden p-5">
       <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-cyan-500/10 blur-2xl" />
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-400/15 bg-slate-900/50 text-cyan-300">
+        <span className={`flex h-9 w-9 items-center justify-center rounded-xl border border-slate-400/15 bg-slate-900/50 transition-transform duration-300 ${danger ? "text-rose-400" : "text-cyan-300"}`}>
           <Icon className="h-4.5 w-4.5" />
         </span>
       </div>
@@ -254,6 +267,21 @@ function Card({ icon, label, value, trend, hint, danger }) {
   );
 }
 
+function MiniStat({ label, value, icon, tone }) {
+  const Icon = icon;
+  return (
+    <div className="admin-glass animate-stagger flex items-center gap-3 p-4">
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-400/15 bg-slate-900/50 ${tone}`}>
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <p className={`text-xl font-black leading-tight ${tone}`}>{value ?? "—"}</p>
+        <p className="truncate text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
+      </div>
+    </div>
+  );
+}
+
 function PriorityBars({ data }) {
   const entries = Object.entries(data || {});
   if (!entries.length) return <Empty text="No todos yet." />;
@@ -267,7 +295,7 @@ function PriorityBars({ data }) {
             <span className="text-slate-500">{v}</span>
           </div>
           <div className="h-2.5 overflow-hidden rounded-full bg-slate-800/60">
-            <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500" style={{ width: `${(v / max) * 100}%` }} />
+            <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-all duration-700" style={{ width: `${(v / max) * 100}%` }} />
           </div>
         </div>
       ))}

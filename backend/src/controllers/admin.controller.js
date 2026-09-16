@@ -19,6 +19,7 @@ import Otp from "../models/otp.model.js";
 import LoginHistory from "../models/loginHistory.model.js";
 import RateLimitLog from "../models/rateLimitLog.model.js";
 import AdminAuditLog from "../models/adminAuditLog.model.js";
+import ContactMessage from "../models/contactMessage.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { getClientIp, getDevice } from "../utils/history.util.js";
@@ -874,4 +875,117 @@ export const listAuditLog = asyncHandler(async (req, res) => {
     success: true,
     data: { events: rows, total, page: Math.max(1, parseInt(page, 10)), limit: size },
   });
+});
+
+/* ------------------------------------------------------------------ */
+/* Section F — Contact / support messages                              */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/admin/messages — paginated support inbox. */
+export const listMessages = asyncHandler(async (req, res) => {
+  const q = req.validatedQuery || {};
+  const { status, category, search, page = 1, limit = 25 } = q;
+  const filter = {};
+  if (status) filter.status = status;
+  if (category) filter.category = category;
+  if (search) {
+    const re = new RegExp(String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [{ name: re }, { email: re }, { subject: re }, { message: re }];
+  }
+
+  const skip = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
+  const size = Math.min(200, parseInt(limit, 10));
+
+  const [total, rows, statusCounts] = await Promise.all([
+    ContactMessage.countDocuments(filter),
+    ContactMessage.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(size)
+      .lean(),
+    // Unfiltered status breakdown → feeds the "New/Read/Resolved" tab badges.
+    ContactMessage.aggregate([
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      messages: rows,
+      statusCounts: Object.fromEntries(statusCounts.map((s) => [s._id, s.count])),
+      total,
+      page: Math.max(1, parseInt(page, 10)),
+      limit: size,
+    },
+  });
+});
+
+/** GET /api/admin/messages/:id — single message; auto-marks "new" → "read". */
+export const getMessage = asyncHandler(async (req, res) => {
+  const msg = await ContactMessage.findById(req.params.id).lean();
+  if (!msg) throw ApiError.notFound("Message not found.");
+
+  // First open → mark as read (fire-and-forget, never blocks the response).
+  if (msg.status === "new") {
+    ContactMessage.updateOne(
+      { _id: msg._id, status: "new" },
+      { $set: { status: "read" } }
+    ).catch(() => {});
+    msg.status = "read";
+  }
+
+  res.status(200).json({ success: true, data: { message: msg } });
+});
+
+/** PATCH /api/admin/messages/:id — update status and/or admin note. */
+export const updateMessage = asyncHandler(async (req, res) => {
+  const { status, adminNote } = req.body;
+  const update = {};
+  if (status) update.status = status;
+  if (adminNote !== undefined) update.adminNote = adminNote;
+  if (Object.keys(update).length === 0) {
+    throw ApiError.badRequest("Provide status or adminNote to update.");
+  }
+
+  // When resolving, stamp the handler.
+  if (status === "resolved") {
+    update.handledBy = req.user._id;
+    update.handledAt = new Date();
+  }
+
+  const msg = await ContactMessage.findByIdAndUpdate(
+    req.params.id,
+    { $set: update },
+    { new: true, runValidators: true }
+  );
+  if (!msg) throw ApiError.notFound("Message not found.");
+
+  await logAdminAction({
+    adminId: req.user._id,
+    action: "resolve_message",
+    targetType: "Message",
+    targetId: msg._id,
+    details: { status: msg.status, adminNote: (adminNote || "").slice(0, 200) },
+    req,
+  });
+
+  res.status(200).json({ success: true, message: "Message updated.", data: { message: msg } });
+});
+
+/** DELETE /api/admin/messages/:id — permanently remove a message. */
+export const deleteMessage = asyncHandler(async (req, res) => {
+  const msg = await ContactMessage.findByIdAndDelete(req.params.id);
+  if (!msg) throw ApiError.notFound("Message not found.");
+
+  await logAdminAction({
+    adminId: req.user._id,
+    action: "delete_message",
+    targetType: "Message",
+    targetId: msg._id,
+    details: { subject: (msg.subject || "").slice(0, 80), email: msg.email },
+    req,
+  });
+
+  res.status(200).json({ success: true, message: "Message deleted." });
 });

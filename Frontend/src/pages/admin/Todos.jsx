@@ -1,28 +1,38 @@
 /**
  * Admin Todos — todo activity monitoring.
+ *
  * Tabs: All Todos (filterable) · Stats (recharts) · Recycle Bin (restore/purge).
- * Purging a todo is destructive → ConfirmModal + toast.
+ * - Every todo row is clickable → TodoDetailModal renders the COMPLETE
+ *   database record: description, tags, due date, timestamps, reminder
+ *   state, attachments, pin flag + full lifecycle history.
+ * - Auto-refreshes every 30s with a live indicator.
+ * - Purging is destructive → ConfirmModal + toast.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
-import { ListTodo, Trash2, RotateCcw, Search, RefreshCw, BarChart3 } from "lucide-react";
+import {
+  ListTodo, Trash2, RotateCcw, Search, RefreshCw, BarChart3, Eye, Pin,
+  Paperclip, Clock, Tags,
+} from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import client from "../../api/client";
 import Spinner from "../../components/Spinner";
 import {
-  Panel, PageHeader, Badge, Pagination, Empty, ConfirmModal,
+  Panel, PageHeader, Badge, Pagination, Empty, ConfirmModal, Skeleton, TabButton, LiveIndicator,
 } from "../../components/admin/ui";
 import { fmtDate, TODO_STATUS_TONE, TODO_PRIORITY_TONE } from "../../components/admin/utils";
+import usePoll from "../../components/admin/usePoll";
+import TodoDetailModal from "../../components/admin/TodoDetailModal";
 
 const STATUS_COLORS = { pending: "#60a5fa", in_progress: "#fbbf24", completed: "#34d399" };
 const PRIORITY_COLORS = { high: "#fb7185", medium: "#fbbf24", low: "#34d399" };
 
 const TABS = [
-  { id: "all", label: "All Todos" },
-  { id: "stats", label: "Stats" },
-  { id: "deleted", label: "Recycle Bin" },
+  { id: "all", label: "All Todos", icon: ListTodo },
+  { id: "stats", label: "Stats", icon: BarChart3 },
+  { id: "deleted", label: "Recycle Bin", icon: Trash2 },
 ];
 
 const CHART_TICK = { fill: "#64748b", fontSize: 11 };
@@ -46,20 +56,13 @@ export default function AdminTodos() {
   const [tab, setTab] = useState("all");
   return (
     <div className="space-y-5">
-      <PageHeader title="Todos" subtitle="Track task volume across every user" icon={ListTodo} />
+      <PageHeader title="Todos" subtitle="Track every task detail stored in the database" icon={ListTodo} />
       <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition ${
-              tab === t.id
-                ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-200"
-                : "border-slate-400/10 bg-slate-900/30 text-slate-400 hover:border-slate-400/25 hover:text-white"
-            }`}
-          >
+          <TabButton key={t.id} active={tab === t.id} onClick={() => setTab(t.id)}>
+            <t.icon className="h-4 w-4" />
             {t.label}
-          </button>
+          </TabButton>
         ))}
       </div>
       {tab === "all" && <AllTodos />}
@@ -76,16 +79,17 @@ function AllTodos() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
+  const [detail, setDetail] = useState(null);
 
-  const load = useCallback(() => {
-    client.get("/api/admin/todos", {
-      params: { page, limit: 15, search: search || undefined, status: status || undefined, priority: priority || undefined },
-    })
-      .then(({ data }) => { setRows(data.data.todos); setTotal(data.data.total); })
-      .catch(() => setRows([]));
-  }, [page, search, status, priority]);
-
-  useEffect(() => { load(); }, [load]);
+  const { refreshing, lastUpdated, refresh } = usePoll(
+    useCallback(() =>
+      client.get("/api/admin/todos", {
+        params: { page, limit: 15, search: search || undefined, status: status || undefined, priority: priority || undefined },
+      }).then(({ data }) => { setRows(data.data.todos); setTotal(data.data.total); })
+        .catch(() => setRows([])),
+    [page, search, status, priority]),
+    [page, search, status, priority]
+  );
 
   return (
     <Panel
@@ -93,6 +97,7 @@ function AllTodos() {
       icon={ListTodo}
       action={
         <div className="flex flex-wrap items-center gap-2">
+          <LiveIndicator lastUpdated={lastUpdated} refreshing={refreshing} />
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             <input className="admin-input !w-44 !py-1.5 !pl-8 sm:!w-56" placeholder="Search tasks…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
@@ -109,48 +114,127 @@ function AllTodos() {
             <option value="medium">Medium</option>
             <option value="high">High</option>
           </select>
-          <button onClick={load} className="admin-btn-ghost" title="Refresh"><RefreshCw className="h-4 w-4" /></button>
+          <button onClick={refresh} className="admin-btn-ghost" title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
         </div>
       }
     >
       {!rows ? <Spinner label="Loading…" /> : rows.length === 0 ? <Empty text="No todos match these filters." /> : (
         <>
           <div className="overflow-x-auto">
-            <table className="admin-table w-full min-w-[720px]">
+            <table className="admin-table w-full min-w-[900px]">
               <thead>
-                <tr><th>Task</th><th>Owner</th><th>Status</th><th>Priority</th><th>Created</th></tr>
+                <tr>
+                  <th>Task</th>
+                  <th>Owner</th>
+                  <th>Status</th>
+                  <th>Priority</th>
+                  <th>Flags</th>
+                  <th>Reminder</th>
+                  <th>Created</th>
+                  <th className="text-right">View</th>
+                </tr>
               </thead>
               <tbody>
                 {rows.map((t) => (
-                  <tr key={t._id}>
+                  <tr key={t._id} className="cursor-pointer" onClick={() => setDetail(t)}>
                     <td className="max-w-[280px]">
                       <div className="truncate font-semibold text-slate-200">{t.title || t.task}</div>
                       {t.description && <div className="max-w-[260px] truncate text-xs text-slate-500">{t.description}</div>}
+                      {Array.isArray(t.tags) && t.tags.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {t.tags.slice(0, 3).map((tag) => (
+                            <span key={tag} className="inline-flex items-center gap-0.5 rounded bg-cyan-400/10 px-1.5 py-px text-[10px] font-semibold text-cyan-300"><Tags className="h-2.5 w-2.5" />{tag}</span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="!text-xs">{t.user?.name || t.user?.email || "—"}</td>
                     <td><Badge tone={TODO_STATUS_TONE[t.status] || "slate"} dot>{t.status}</Badge></td>
                     <td><Badge tone={TODO_PRIORITY_TONE[t.priority] || "slate"}>{t.priority}</Badge></td>
+                    <td>
+                      <div className="flex flex-wrap gap-1">
+                        {t.isPinned && <span title="Pinned"><Pin className="h-3.5 w-3.5 text-cyan-400" /></span>}
+                        {t.isArchived && <Badge tone="amber">archived</Badge>}
+                        {t.isDeleted && <Badge tone="red">deleted</Badge>}
+                        {(!t.isPinned && !t.isArchived && !t.isDeleted) && <span className="text-[10px] text-slate-600">—</span>}
+                      </div>
+                    </td>
+                    <td className="!text-xs">
+                      {t.reminderAt ? (
+                        <span className="flex items-center gap-1 text-amber-300">
+                          <Clock className="h-3 w-3" />
+                          <span title={`Reminder ${fmtDate(t.reminderAt, true)}`}>{t.reminderSent ? "sent" : "due soon"}</span>
+                        </span>
+                      ) : <span className="text-slate-600">—</span>}
+                    </td>
                     <td className="!text-xs text-slate-500">{fmtDate(t.createdAt)}</td>
+                    <td className="text-right">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDetail(t); }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/25 bg-cyan-400/10 px-2 py-1 text-[11px] font-semibold text-cyan-300 transition active:scale-95 hover:bg-cyan-400/20"
+                      >
+                        <Eye className="h-3 w-3" /> Full record
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {/* ── Mobile: card version of each todo ── */}
+          <div className="grid gap-3 md:hidden">
+            {rows.map((t) => (
+              <button
+                key={t._id}
+                onClick={() => setDetail(t)}
+                className="admin-row-card rounded-xl border border-slate-400/10 bg-slate-900/40 p-4 text-left"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-slate-100">{t.title || t.task}</p>
+                    <p className="truncate text-xs text-slate-500">{t.user?.name || t.user?.email}</p>
+                  </div>
+                  <Eye className="h-4 w-4 shrink-0 text-cyan-400" />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <Badge tone={TODO_STATUS_TONE[t.status] || "slate"} dot>{t.status}</Badge>
+                  <Badge tone={TODO_PRIORITY_TONE[t.priority] || "slate"}>{t.priority}</Badge>
+                  {t.isPinned && <Pin className="h-3.5 w-3.5 text-cyan-400" />}
+                  {t.isArchived && <Badge tone="amber">archived</Badge>}
+                  {t.isDeleted && <Badge tone="red">deleted</Badge>}
+                </div>
+                <div className="mt-2 text-[11px] text-slate-500">
+                  {t.dueDate && <span className="mr-2">Due {fmtDate(t.dueDate)}</span>}
+                  Created {fmtDate(t.createdAt)}
+                </div>
+              </button>
+            ))}
+          </div>
+
           <Pagination page={page} total={total} limit={15} onChange={setPage} />
         </>
       )}
+
+      <TodoDetailModal
+        todo={detail && { ...detail, user: typeof detail.user === "object" ? detail.user : null }}
+        onClose={() => setDetail(null)}
+      />
     </Panel>
   );
 }
 
 function TodosStats() {
-  const [data, setData] = useState(null);
-  useEffect(() => { client.get("/api/admin/todos/stats").then(({ data }) => setData(data.data)).catch(() => setData(null)); }, []);
-
-  if (!data) return <Spinner label="Loading stats…" />;
-  const totals = data.totals || {};
-  const statusData = Object.entries(data.byStatus || {}).map(([k, v]) => ({ name: k.replace("_", " "), value: v }));
-  const priorityData = Object.entries(data.byPriority || {}).map(([k, v]) => ({ name: k, value: v }));
+  const { data, loaded } = usePoll(
+    useCallback(() => client.get("/api/admin/todos/stats").then(({ data }) => data.data), []),
+    []
+  );
+  if (!loaded && !data) return <Spinner label="Loading stats…" />;
+  const totals = data?.totals || {};
+  const statusData = Object.entries(data?.byStatus || {}).map(([k, v]) => ({ name: k.replace("_", " "), value: v }));
+  const priorityData = Object.entries(data?.byPriority || {}).map(([k, v]) => ({ name: k, value: v }));
 
   return (
     <div className="space-y-5">
@@ -161,7 +245,7 @@ function TodosStats() {
           { l: "In progress", v: totals.in_progress, tone: "text-amber-400" },
           { l: "Pending", v: totals.pending, tone: "text-cyan-300" },
         ].map((s) => (
-          <div key={s.l} className="admin-glass p-5 text-center">
+          <div key={s.l} className="admin-glass admin-glass-hover animate-stagger p-5 text-center" style={{ animationDelay: "0s" }}>
             <div className={`text-3xl font-black ${s.tone}`}>{s.v ?? 0}</div>
             <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-slate-500">{s.l}</div>
           </div>
@@ -205,10 +289,10 @@ function TodosStats() {
       </div>
 
       <Panel title="Most active users" icon={ListTodo}>
-        {(data.mostActiveUsers || []).length === 0 ? <Empty /> : (
+        {(data?.mostActiveUsers || []).length === 0 ? <Empty /> : (
           <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-            {(data.mostActiveUsers || []).map((u, i) => (
-              <div key={i} className="flex items-center justify-between rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3">
+            {(data?.mostActiveUsers || []).map((u, i) => (
+              <div key={i} className="admin-row-card flex items-center justify-between rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3 hover:border-cyan-400/30">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-200">{u.user?.email || u.user?.name || "Unknown user"}</p>
                   <p className="text-[11px] text-slate-500">{u.completed} completed</p>
@@ -226,16 +310,18 @@ function TodosStats() {
 function RecycleBin() {
   const [data, setData] = useState(null);
   const [page, setPage] = useState(1);
-  const [confirm, setConfirm] = useState(null); // { todo, action }
+  const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [detail, setDetail] = useState(null);
 
-  const load = useCallback(() => {
-    client.get("/api/admin/todos/deleted", { params: { page, limit: 15 } })
-      .then(({ data }) => setData(data.data))
-      .catch(() => setData(null));
-  }, [page]);
-
-  useEffect(() => { load(); }, [load]);
+  const { refreshing, lastUpdated, refresh } = usePoll(
+    useCallback(() =>
+      client.get("/api/admin/todos/deleted", { params: { page, limit: 15 } })
+        .then(({ data }) => setData(data.data))
+        .catch(() => setData(null)),
+    [page]),
+    [page]
+  );
 
   const act = async (kind, msg) => {
     const todo = confirm.todo;
@@ -246,7 +332,7 @@ function RecycleBin() {
         : client.delete(`/api/admin/todos/${todo._id}/purge`);
       const { data: res } = await req;
       toast.success(res.message || msg);
-      load();
+      refresh();
     } catch {
       toast.error("Action failed");
     } finally {
@@ -256,17 +342,24 @@ function RecycleBin() {
   };
 
   return (
-    <Panel title="Soft-deleted todos (recycle bin)" icon={Trash2} action={<Badge tone="cyan">{data?.total ?? 0} items</Badge>}>
-      {!data ? <Spinner label="Loading recycle bin…" /> : data.todos.length === 0 ? <Empty text="Recycle bin is empty." /> : (
+    <Panel title="Soft-deleted todos (recycle bin)" icon={Trash2}
+      action={
+        <div className="flex items-center gap-2">
+          <LiveIndicator lastUpdated={lastUpdated} refreshing={refreshing} />
+          <Badge tone="cyan">{data?.total ?? 0} items</Badge>
+        </div>
+      }>
+      {!data ? <Skeleton lines={3} /> : !data.todos || data.todos.length === 0 ? <Empty text="Recycle bin is empty." /> : (
         <>
           <ul className="space-y-2">
             {data.todos.map((t) => (
-              <li key={t._id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3">
-                <div className="min-w-0">
+              <li key={t._id} className="admin-row-card flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3 hover:border-slate-400/30">
+                <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-slate-200">{t.title || t.task}</p>
-                  <p className="text-xs text-slate-500">{t.user?.email || "Unknown user"} · deleted {fmtDate(t.updatedAt)}</p>
+                  <p className="text-xs text-slate-500">{t.user?.email || "Unknown user"} · deleted {fmtDate(t.deletedAt || t.updatedAt)}</p>
                 </div>
                 <div className="flex gap-2">
+                  <button onClick={() => setDetail(t)} className="admin-btn-ghost !px-2.5 !py-1.5 text-xs" title="View full record"><Eye className="h-3.5 w-3.5" /></button>
                   <button onClick={() => setConfirm({ todo: t, action: "restore" })} className="admin-btn-secondary !px-3 !py-1.5 text-xs"><RotateCcw className="h-3.5 w-3.5" /> Restore</button>
                   <button onClick={() => setConfirm({ todo: t, action: "purge" })} className="admin-btn-danger !px-3 !py-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" /> Purge</button>
                 </div>
@@ -276,6 +369,11 @@ function RecycleBin() {
           <Pagination page={page} total={data.total} limit={15} onChange={setPage} />
         </>
       )}
+
+      <TodoDetailModal
+        todo={detail && { ...detail, user: typeof detail.user === "object" ? detail.user : null }}
+        onClose={() => setDetail(null)}
+      />
 
       <ConfirmModal
         open={Boolean(confirm)}

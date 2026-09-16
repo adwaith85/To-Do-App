@@ -24,6 +24,7 @@ const AdminUsers = lazy(() => import("./pages/admin/Users"));
 const AdminUserDetail = lazy(() => import("./pages/admin/UserDetail"));
 const AdminSecurity = lazy(() => import("./pages/admin/Security"));
 const AdminTodos = lazy(() => import("./pages/admin/Todos"));
+const AdminMessages = lazy(() => import("./pages/admin/Messages"));
 const AdminAudit = lazy(() => import("./pages/admin/Audit"));
 
 export default function App() {
@@ -32,25 +33,31 @@ export default function App() {
       <Toaster
         position="top-center"
         toastOptions={{
-          duration: 2200,
+          duration: 2400,
           style: {
-            background: "rgba(16, 23, 44, 0.88)",
-            backdropFilter: "blur(10px)",
-            WebkitBackdropFilter: "blur(10px)",
+            background: "rgba(16, 23, 44, 0.92)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
             color: "#e2e8f0",
             border: "1px solid rgba(255,255,255,0.14)",
             fontFamily: "Outfit, sans-serif",
             fontSize: "12px",
             lineHeight: "18px",
             fontWeight: 500,
-            padding: "7px 10px",
+            padding: "8px 12px",
             minWidth: "auto",
             maxWidth: "300px",
-            borderRadius: "10px",
-            boxShadow: "0 8px 24px -6px rgba(0,0,0,0.65)",
+            borderRadius: "12px",
+            boxShadow: "0 10px 32px -8px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.04)",
           },
-          success: { iconTheme: { primary: "#34d399", secondary: "#10172c" } },
-          error: { iconTheme: { primary: "#fb7185", secondary: "#10172c" } },
+          success: {
+            iconTheme: { primary: "#34d399", secondary: "#10172c" },
+            style: { border: "1px solid rgba(52,211,153,0.25)" },
+          },
+          error: {
+            iconTheme: { primary: "#fb7185", secondary: "#10172c" },
+            style: { border: "1px solid rgba(251,113,133,0.25)" },
+          },
         }}
       />
 
@@ -79,6 +86,7 @@ export default function App() {
             <Route path="users/:id" element={<AdminUserDetail />} />
             <Route path="security" element={<AdminSecurity />} />
             <Route path="todos" element={<AdminTodos />} />
+            <Route path="messages" element={<AdminMessages />} />
             <Route path="audit" element={<AdminAudit />} />
           </Route>
 

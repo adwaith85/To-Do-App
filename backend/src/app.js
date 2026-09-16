@@ -20,6 +20,7 @@ const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 import authRoutes from "./routes/auth.routes.js";
 import todoRoutes from "./routes/todo.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
+import contactRoutes from "./routes/contact.routes.js";
 import { apiLimiter } from "./middleware/rateLimiter.middleware.js";
 import { ensureCsrfCookie } from "./middleware/csrf.middleware.js";
 import { notFoundHandler, errorHandler } from "./middleware/error.middleware.js";
@@ -87,6 +88,7 @@ export function createApp() {
   api.use("/auth", authRoutes);
   api.use("/todos", todoRoutes);
   api.use("/admin", adminRoutes);
+  api.use("/contact", contactRoutes);
 
   app.use("/api", api);
 

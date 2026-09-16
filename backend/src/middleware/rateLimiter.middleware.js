@@ -21,6 +21,8 @@ const API_RATE_LIMIT_MAX = process.env.API_RATE_LIMIT_MAX || "300";
 const API_RATE_LIMIT_WINDOW_MINUTES = process.env.API_RATE_LIMIT_WINDOW_MINUTES || "15";
 const PASSWORD_RESET_RATE_LIMIT_MAX = process.env.PASSWORD_RESET_RATE_LIMIT_MAX || "5";
 const PASSWORD_RESET_RATE_LIMIT_WINDOW_MINUTES = process.env.PASSWORD_RESET_RATE_LIMIT_WINDOW_MINUTES || "60";
+const CONTACT_RATE_LIMIT_MAX = process.env.CONTACT_RATE_LIMIT_MAX || "10";
+const CONTACT_RATE_LIMIT_WINDOW_MINUTES = process.env.CONTACT_RATE_LIMIT_WINDOW_MINUTES || "60";
 
 /**
  * Fire-and-forget record of this 429 so admins can spot abuse patterns.
@@ -92,4 +94,12 @@ export const apiLimiter = rateLimit({
   limit: parseInt(API_RATE_LIMIT_MAX, 10),
   ...standardOptions,
   handler: limiterHandler("api", "Too many requests from this IP. Please try again later."),
+});
+
+/** Public contact/help form: 10 submissions / IP / hour — tight enough to block spam but lenient for a legit user. */
+export const contactLimiter = rateLimit({
+  windowMs: parseInt(CONTACT_RATE_LIMIT_WINDOW_MINUTES, 10) * 60_000,
+  limit: parseInt(CONTACT_RATE_LIMIT_MAX, 10),
+  ...standardOptions,
+  handler: limiterHandler("contact", "Too many messages sent. Please try again later."),
 });

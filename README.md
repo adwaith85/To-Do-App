@@ -207,24 +207,45 @@ Promotion is done directly in MongoDB (no helper script ships in the repo):
 
 ### What the panel monitors
 
-All admin pages share a dark "liquid-glass" slate theme, auto-refresh
-every 30s, surface toasts for every action, and gate destructive actions
-behind confirmation modals.
+All admin pages share a dark "liquid-glass" slate theme, **auto-refresh every
+30s** (with a pulsing live indicator + manual refresh button on every page),
+smooth entrance/fade transitions, staggered metric cards, skeleton loaders
+while fetching, and responsive layouts — tables collapse into row cards on
+mobile. Every action surfaces a toast and destructive actions are gated
+behind animated confirmation modals.
 
 - **Dashboard** — user/todo totals with day-over-day trend chips, signups
   over time, login success/failure trend, todos-by-status pie, system
-  health + priority bars (recharts).
-- **Users** — list/search/filter with sortable columns, lock/unlock,
-  deactivate/reactivate, force sign-out, all with confirm modals + toasts.
-- **User detail** (`/admin/users/:id`) — full profile, soft todo stats,
-  security activity timeline, and per-session revoke.
-- **Login & Security** — login-history table (CSV export), failed-attempt
-  grouping by IP & user, all active sessions with per-session revoke,
-  rate-limit hits, risky-activity alerts.
-- **Todos** — all todos across users, status/priority stats, most-active
-  users, recycle bin (restore or purge soft-deleted todos).
+  health + priority bars (recharts), plus a verified/unverified/admins/
+  deactivated user breakdown strip.
+- **Users** — list/search/filter with sortable columns and mobile card rows,
+  lock/unlock, deactivate/reactivate, force sign-out, all with confirm
+  modals + toasts.
+- **User detail** (`/admin/users/:id`) — full profile (contact, verification
+  flags, 2FA, admin code, lockout, login IPs), soft todo stats, per-session
+  revoke, a security-activity timeline and a verification-flags grid.
+- **Login & Security** — login-history table (CSV export) with auto-refresh,
+  failed-attempt grouping by IP & user, all active sessions with per-session
+  revoke, rate-limit hits, risky-activity alerts.
+- **Todos** — all todos across users with status/priority/flags/reminder
+  columns; clicking any row opens a **full-record popup** that renders every
+  database field (description, tags, due date, all lifecycle timestamps,
+  reminder state, attachments and the complete `history[]` trail). Includes
+  stats charts, most-active users and a recycle bin (restore or purge).
 - **Audit Log** — every admin action (including `revoke_session`) is
-  recorded in `AdminAuditLog`.
+  recorded in `AdminAuditLog`, with action filters, detail rows and
+  auto-refresh.
+- **Messages** — support requests submitted from the login page's
+  "Need help?" form (`POST /api/contact`). Filter by status
+  (new/read/resolved) and topic, open the full message, mark resolved,
+  leave a private admin note, or delete — each action leaves an
+  `AdminAuditLog` entry.
+- **Login error clarity** — once the password is verified, a
+  deactivated account is told plainly ("your account has been
+  deactivated…") instead of the generic wrong-credentials error, and
+  locked accounts see the remaining wait time. The generic/equalized
+  response is kept for every path *before* password verification, so
+  account existence still can't be probed through timing or errors.
 
 ## Manual testing
 
@@ -286,3 +307,8 @@ logout. No Postman or automated suite is required.
 | GET  | `/api/admin/stats/otp-usage` | admin | OTP sent vs verified |
 | GET  | `/api/admin/stats/rate-limits` | admin | rate-limit hit log |
 | GET  | `/api/admin/audit-log` | admin | admin actions log |
+| POST | `/api/contact` | — | public help form (10/h/IP) → admin inbox |
+| GET  | `/api/admin/messages` | admin | support inbox (filter/paginate) |
+| GET  | `/api/admin/messages/:id` | admin | read one (auto marks new→read) |
+| PATCH | `/api/admin/messages/:id` | admin | status / admin note |
+| DELETE | `/api/admin/messages/:id` | admin | delete a message |

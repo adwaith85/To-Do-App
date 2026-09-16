@@ -389,3 +389,40 @@ export const adminAuditQuery = z.object({
   adminId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid adminId").optional(),
   action: z.string().trim().max(60).optional(),
 });
+
+/* ------------------------------------------------------------------ */
+/* Public contact form + admin message triage                         */
+/* ------------------------------------------------------------------ */
+
+/** POST /api/contact — help request from the public login page. */
+export const contactMessageSchema = z.object({
+  name: nameField,
+  email: emailField,
+  category: z.enum(["login", "account", "bug", "billing", "other"], {
+    required_error: "Please choose a topic",
+  }),
+  subject: z
+    .string({ required_error: "Subject is required" })
+    .trim()
+    .min(3, "Subject must be at least 3 characters")
+    .max(120, "Subject is too long"),
+  message: z
+    .string({ required_error: "Message is required" })
+    .trim()
+    .min(10, "Message must be at least 10 characters")
+    .max(2000, "Message is too long"),
+});
+
+/** GET /api/admin/messages */
+export const adminMessagesQuery = z.object({
+  ...paginationFields,
+  status: z.enum(["new", "read", "resolved"]).optional(),
+  category: z.enum(["login", "account", "bug", "billing", "other"]).optional(),
+  search: z.string().trim().max(120).optional(),
+});
+
+/** PATCH /api/admin/messages/:id */
+export const updateMessageSchema = z.object({
+  status: z.enum(["new", "read", "resolved"]).optional(),
+  adminNote: z.string().trim().max(500, "Admin note is too long").optional(),
+});

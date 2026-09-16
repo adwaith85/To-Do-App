@@ -5,7 +5,7 @@
  * pages stay readable and the styling stays consistent ("slate liquid-glass"
  * identity — see index.css .admin-*) .
  */
-import { X, ArrowLeft, ArrowRight, Inbox } from "lucide-react";
+import { X, ArrowLeft, ArrowRight, Inbox, RefreshCw } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Avatar                                                              */
@@ -72,7 +72,7 @@ export function Panel({ title, icon, action, children, className = "", bodyClass
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             {Icon && (
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-400/10 text-cyan-300">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-400/10 text-cyan-300 transition group-hover:bg-cyan-400/20">
                 <Icon className="h-4 w-4" />
               </span>
             )}
@@ -85,6 +85,54 @@ export function Panel({ title, icon, action, children, className = "", bodyClass
       )}
       <div className={bodyClassName}>{children}</div>
     </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Loading / live indicators                                          */
+/* ------------------------------------------------------------------ */
+
+/** Pulsing green "auto-refresh" badge with last-updated time. */
+export function LiveIndicator({ lastUpdated, refreshing, intervalLabel = "auto" }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-400">
+      <span className="admin-live-dot h-1.5 w-1.5 rounded-full bg-emerald-400" />
+      {refreshing ? "refreshing…" : intervalLabel === "auto" ? `live · ${lastUpdated ? "updated " + fmtSecs(lastUpdated) : "auto"}` : intervalLabel}
+    </span>
+  );
+}
+
+function fmtSecs(date) {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  return `${Math.floor(s / 60)}m ago`;
+}
+
+/** Skeleton placeholder block — pass `lines` for text blockers, or custom children. */
+export function Skeleton({ lines = 3, className = "" }) {
+  return (
+    <div className={`space-y-2.5 ${className}`}>
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className="admin-skeleton h-4" style={{ width: `${100 - i * 14}%` }} />
+      ))}
+    </div>
+  );
+}
+
+/** Tab pill used across the console with smooth active transitions. */
+export function TabButton({ active, onClick, children, className = "" }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-all duration-200 active:scale-[0.97] ${
+        active
+          ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-200 shadow-[0_8px_24px_-12px_rgb(34_211_238/0.6)]"
+          : "border-slate-400/10 bg-slate-900/30 text-slate-400 hover:-translate-y-px hover:border-slate-400/25 hover:bg-white/5 hover:text-white"
+      } ${className}`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -240,8 +288,8 @@ export function ConfirmModal({ open, title, message, confirmLabel = "Confirm", t
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
-      <div className="admin-glass relative w-full max-w-md p-6">
+      <div className="animate-modal-backdrop absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
+      <div className="admin-glass animate-modal-sheet relative w-full max-w-md p-6">
         <div className="mb-1 flex items-start justify-between gap-3">
           <h3 className="text-base font-black text-white">{title}</h3>
           <button onClick={onCancel} className="rounded-lg p-1 text-slate-500 transition hover:bg-white/5 hover:text-white" aria-label="Close">

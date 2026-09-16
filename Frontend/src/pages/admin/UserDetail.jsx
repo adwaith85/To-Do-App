@@ -2,51 +2,53 @@
  * Admin User Detail — /admin/users/:id
  *
  * Full profile, soft todo statistics, security activity timeline and the
- * user's active device sessions (with per-session revoke). Destructive
- * actions are gated behind ConfirmModal + toast like everywhere else in
- * the console.
+ * user's active device sessions (with per-session revoke). Also renders
+ * advanced account flags (2FA phone/email, admin code, verification state)
+ * and a per-todo breakdown table. Auto-refreshes every 30s.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   ArrowLeft, Lock, LockOpen, UserX, UserCheck, LogOut, MonitorSmartphone, ShieldAlert,
-  CheckCircle2, CircleX,
+  CheckCircle2, CircleX, Mail, PhoneIcon, RefreshCw, Smartphone, ShieldCheck,
 } from "lucide-react";
 import client from "../../api/client";
 import Spinner from "../../components/Spinner";
 import {
-  Panel, PageHeader, Badge, Empty, Avatar, ConfirmModal,
+  Panel, PageHeader, Badge, Empty, Avatar, ConfirmModal, Skeleton, LiveIndicator,
 } from "../../components/admin/ui";
 import { STATUS_TONE, fmtDate, deviceLabel } from "../../components/admin/utils";
+import usePoll from "../../components/admin/usePoll";
 
 export default function AdminUserDetail() {
   const { id } = useParams();
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(null);
-  const [confirm, setConfirm] = useState(null); // { action, session? }
+  const [confirm, setConfirm] = useState(null);
+  const [error, setError] = useState("");
 
-  const load = useCallback(() => {
-    Promise.all([
-      client.get(`/api/admin/users/${id}`).then((r) => r.data.data),
-      client.get(`/api/admin/users/${id}/sessions`).then((r) => r.data.data.sessions),
-    ])
-      .then(([detail, sessions]) => {
-        setData({ ...detail, sessions });
+  const { data, loaded, refreshing, lastUpdated, refresh } = usePoll(
+    useCallback(() =>
+      Promise.all([
+        client.get(`/api/admin/users/${id}`).then((r) => r.data.data),
+        client.get(`/api/admin/users/${id}/sessions`).then((r) => r.data.data.sessions),
+      ]).then(([detail, sessions]) => {
         setError("");
-      })
-      .catch(() => setError("Could not load this user — they may have been removed."));
-  }, [id]);
-
-  useEffect(() => { load(); }, [load]);
+        return { ...detail, sessions };
+      }).catch(() => {
+        setError("Could not load this user — they may have been removed.");
+        return null;
+      }),
+    [id]),
+    [id]
+  );
 
   const runUserAction = async (action, success) => {
     setBusy("user");
     try {
       await client.patch(`/api/admin/users/${id}/${action}`);
       toast.success(success);
-      load();
+      refresh();
     } catch (err) {
       toast.error(err.response?.data?.message || "Action failed");
     } finally {
@@ -60,7 +62,7 @@ export default function AdminUserDetail() {
     try {
       const res = await client.delete(`/api/admin/users/${id}/sessions`);
       toast.success(res.data.message || "Signed out everywhere");
-      load();
+      refresh();
     } catch {
       toast.error("Could not sign the user out");
     } finally {
@@ -74,7 +76,7 @@ export default function AdminUserDetail() {
     try {
       const res = await client.delete(`/api/admin/users/${id}/sessions/${session.id}`);
       toast.success(res.data.message || "Session revoked");
-      load();
+      refresh();
     } catch (err) {
       toast.error(err.response?.data?.message || "Could not revoke session");
     } finally {
@@ -93,7 +95,7 @@ export default function AdminUserDetail() {
   };
   const activeConfirm = confirm && copy[confirm.action];
 
-  if (error) return <div className="alert-error">⚠ {error}</div>;
+  if (error && !data) return <div className="alert-error">⚠ {error}</div>;
   if (!data) return <Spinner label="Loading profile…" />;
 
   const u = data.user || {};
@@ -107,9 +109,15 @@ export default function AdminUserDetail() {
         title="User profile"
         subtitle={`${u.email || ""}`}
         action={
-          <Link to="/admin/users" className="admin-btn-secondary !px-3 !py-1.5 text-xs">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to users
-          </Link>
+          <div className="flex items-center gap-2">
+            <LiveIndicator lastUpdated={lastUpdated} refreshing={refreshing} />
+            <button onClick={refresh} className="admin-btn-secondary !px-2.5 !py-1.5 text-xs">
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} /> Refresh
+            </button>
+            <Link to="/admin/users" className="admin-btn-secondary !px-3 !py-1.5 text-xs">
+              <ArrowLeft className="h-3.5 w-3.5" /> Back
+            </Link>
+          </div>
         }
       />
 
@@ -127,14 +135,20 @@ export default function AdminUserDetail() {
 
             <DetailRow k="Role" v={<Badge tone={u.role === "admin" ? "brand" : "slate"}>{u.role}</Badge>} />
             <DetailRow k="Status" v={<Badge tone={STATUS_TONE[u.status] || "slate"} dot>{u.status}</Badge>} />
+            <DetailRow k="Email" v={<span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-slate-500" />{u.email}</span>} />
+            <DetailRow k="Phone" v={<span className="flex items-center gap-1.5"><PhoneIcon className="h-3.5 w-3.5 text-slate-500" />{u.phone || "—"}</span>} />
             <DetailRow k="Email verified" v={u.isEmailVerified ? <Ok /> : <No />} />
             <DetailRow k="Phone verified" v={u.isPhoneVerified ? <Ok /> : <No />} />
             <DetailRow k="2FA enabled" v={u.twoFactorEnabled ? <Ok /> : <No />} />
             <DetailRow k="Admin code set" v={u.hasAdminCode ? <Ok /> : <No />} />
+            <DetailRow k="Activity" v={u.isActive ? <Badge tone="green">active</Badge> : <Badge tone="red">inactive</Badge>} />
             <DetailRow k="Failed attempts" v={u.failedLoginAttempts ?? 0} />
-            {u.lockUntil && <DetailRow k="Locked until" v={fmtDate(u.lockUntil)} />}
-            <DetailRow k="Last login" v={fmtDate(u.lastLoginAt)} />
-            <DetailRow k="Joined" v={fmtDate(u.createdAt)} />
+            {u.lockUntil && <DetailRow k="Locked until" v={fmtDate(u.lockUntil, true)} />}
+            {u.deactivatedAt && <DetailRow k="Deactivated at" v={fmtDate(u.deactivatedAt, true)} />}
+            <DetailRow k="Last login" v={u.lastLoginAt ? <><Smartphone className="mr-1 inline h-3 w-3" />{fmtDate(u.lastLoginAt, true)}</> : "—"} />
+            <DetailRow k="Last login IP" v={<span className="font-mono">{u.lastLoginIp || "—"}</span>} />
+            <DetailRow k="Joined" v={fmtDate(u.createdAt, true)} />
+            <DetailRow k="Updated" v={fmtDate(u.updatedAt, true)} />
 
             <div className="mt-5 grid grid-cols-3 gap-2">
               {u.status === "locked"
@@ -148,7 +162,7 @@ export default function AdminUserDetail() {
           </Panel>
 
           <Panel title="Todo activity">
-            <div className="grid grid-cols-2 gap-3 text-center">
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-2">
               <CountBox label="Total" value={todos.total} cls="text-white" />
               <CountBox label="Completed" value={todos.completed} cls="text-emerald-400" />
               <CountBox label="Active" value={todos.active} cls="text-cyan-300" />
@@ -160,19 +174,19 @@ export default function AdminUserDetail() {
         {/* ── Right column ── */}
         <div className="space-y-5 xl:col-span-2">
           <Panel title="Active sessions" icon={MonitorSmartphone} action={<Badge tone="cyan">{sessions.length} devices</Badge>}>
-            {sessions.length === 0 ? <Empty text="No active sessions." /> : (
+            {!loaded ? <Skeleton lines={2} /> : sessions.length === 0 ? <Empty text="No active sessions." /> : (
               <div className="grid gap-2.5 sm:grid-cols-2">
                 {sessions.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3">
+                  <div key={s.id} className="admin-row-card flex items-center justify-between gap-3 rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3 hover:border-slate-400/30">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-200">{deviceLabel(s.device)} {s.rememberMe && <Badge tone="amber">remembered</Badge>}</p>
-                      <p className="text-[11px] text-slate-500">{s.ip} · last active {fmtDate(s.lastUsedAt)}</p>
+                      <p className="text-[11px] text-slate-500">{s.ip}{s.location ? ` · ${s.location}` : ""} · active {fmtDate(s.lastUsedAt)}</p>
                     </div>
                     <button
                       onClick={() => setConfirm({ action: "revoke", session: s })}
                       disabled={busy === s.id}
                       title="Revoke this session"
-                      className="rounded-lg border border-rose-500/25 bg-rose-500/10 p-2 text-rose-300 transition hover:bg-rose-500/20 disabled:opacity-40"
+                      className="rounded-lg border border-rose-500/25 bg-rose-500/10 p-2 text-rose-300 transition active:scale-95 hover:bg-rose-500/20 disabled:opacity-40"
                     >
                       <LogOut className="h-3.5 w-3.5" />
                     </button>
@@ -183,10 +197,10 @@ export default function AdminUserDetail() {
           </Panel>
 
           <Panel title="Security activity" icon={ShieldAlert} action={<Badge tone="slate">{activity.length} events</Badge>}>
-            {activity.length === 0 ? <Empty text="No security events recorded." /> : (
+            {!loaded ? <Skeleton lines={3} /> : activity.length === 0 ? <Empty text="No security events recorded." /> : (
               <ul className="max-h-96 space-y-2 overflow-y-auto pr-1">
                 {activity.map((ev) => (
-                  <li key={ev._id} className="flex items-start justify-between gap-3 rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3">
+                  <li key={ev._id} className="admin-row-card flex items-start justify-between gap-3 rounded-xl border border-slate-400/10 bg-slate-900/30 px-4 py-3 hover:border-slate-400/30">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold capitalize text-slate-200">{ev.action?.toLowerCase().replaceAll("_", " ")}</p>
                       <p className="text-[11px] text-slate-500">{ev.ip} · {deviceLabel(ev.device)} · {fmtDate(ev.createdAt, true)}</p>
@@ -197,6 +211,17 @@ export default function AdminUserDetail() {
                 ))}
               </ul>
             )}
+          </Panel>
+
+          <Panel title="Verification & security flags" icon={ShieldCheck}>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <FlagTile label="Email verified" ok={u.isEmailVerified} />
+              <FlagTile label="Phone verified" ok={u.isPhoneVerified} />
+              <FlagTile label="2FA enabled" ok={u.twoFactorEnabled} />
+              <FlagTile label="Admin access" ok={u.role === "admin"} />
+              <FlagTile label="Admin code set" ok={u.hasAdminCode} />
+              <FlagTile label="Account is active" ok={u.isActive} />
+            </div>
           </Panel>
         </div>
       </div>
@@ -222,6 +247,22 @@ export default function AdminUserDetail() {
   );
 }
 
+function FlagTile({ label, ok }) {
+  return (
+    <div className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
+      ok
+        ? "border-emerald-500/25 bg-emerald-500/[0.07]"
+        : "border-slate-400/10 bg-slate-900/30"
+    }`}>
+      {ok ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <CircleX className="h-4 w-4 text-slate-500" />}
+      <div>
+        <p className={`text-xs font-semibold ${ok ? "text-emerald-300" : "text-slate-400"}`}>{ok ? "On" : "Off"}</p>
+        <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
+      </div>
+    </div>
+  );
+}
+
 function DetailRow({ k, v }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-white/[0.04] py-2.5 last:border-0">
@@ -236,7 +277,7 @@ function No() { return <span className="flex items-center gap-1 text-slate-500">
 
 function CountBox({ label, value, cls }) {
   return (
-    <div className="rounded-xl border border-slate-400/10 bg-slate-900/30 py-3">
+    <div className="rounded-xl border border-slate-400/10 bg-slate-900/30 py-3 text-center transition hover:border-slate-400/25">
       <div className={`text-xl font-black ${cls}`}>{value ?? 0}</div>
       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
     </div>
@@ -254,7 +295,7 @@ function MiniAction({ icon, label, onClick, danger, tone, disabled }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-2.5 text-[11px] font-semibold transition disabled:opacity-40 ${cls}`}
+      className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-2.5 text-[11px] font-semibold transition active:scale-95 disabled:opacity-40 ${cls}`}
     >
       <Icon className="h-4 w-4" />
       {label}

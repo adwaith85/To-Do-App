@@ -21,6 +21,8 @@ export const ADMIN_ACTIONS = [
   "revoke_session",
   "restore_todo",
   "purge_todo",
+  "resolve_message",
+  "delete_message",
 ];
 
 const adminAuditLogSchema = new mongoose.Schema(

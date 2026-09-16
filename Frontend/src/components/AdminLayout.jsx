@@ -12,17 +12,18 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, Users, ShieldCheck, ListTodo, ScrollText,
+  LayoutDashboard, Users, ShieldCheck, ListTodo, ScrollText, Inbox,
   ArrowLeft, LogOut, Menu, X, MonitorSmartphone, Activity,
 } from "lucide-react";
 import { useAuth } from "../context/useAuth";
-import { Avatar } from "./admin/ui";
+import { Avatar, Badge } from "./admin/ui";
 
 const NAV = [
   { to: "/admin", end: true, icon: LayoutDashboard, label: "Dashboard" },
   { to: "/admin/users", icon: Users, label: "Users" },
   { to: "/admin/security", icon: ShieldCheck, label: "Login & Security" },
   { to: "/admin/todos", icon: ListTodo, label: "Todos" },
+  { to: "/admin/messages", icon: Inbox, label: "Messages" },
   { to: "/admin/audit", icon: ScrollText, label: "Audit Log" },
 ];
 
@@ -33,6 +34,7 @@ function titleFor(pathname) {
   if (pathname.startsWith("/admin/users")) return "Users";
   if (pathname.startsWith("/admin/security")) return "Login & Security";
   if (pathname.startsWith("/admin/todos")) return "Todos";
+  if (pathname.startsWith("/admin/messages")) return "Messages";
   if (pathname.startsWith("/admin/audit")) return "Audit Log";
   return "Admin Console";
 }
@@ -137,6 +139,8 @@ export default function AdminLayout() {
               </h1>
             </div>
 
+            <Badge tone="green" dot>online</Badge>
+
             <button
               onClick={() => navigate("/")}
               title="Back to your todo app"
@@ -153,7 +157,7 @@ export default function AdminLayout() {
         </header>
 
         {/* Page outlet */}
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8 animate-fade-in">
+        <main key={location.pathname} className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8 animate-admin-pop">
           <Outlet />
         </main>
 

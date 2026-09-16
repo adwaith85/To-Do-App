@@ -3,22 +3,26 @@
  *
  * - Debounced search + role/status filters (server-side).
  * - Sortable columns (client-side within the current page).
- * - Every destructive action (lock / deactivate / force sign-out) goes
- *   through a ConfirmModal and finishes with a toast.
- * - Rows link into /admin/users/:id for the full profile.
+ * - Auto-poll every 30s with live indicator + manual refresh.
+ * - Responsive: table on desktop, row cards on mobile.
+ * - Every action gated behind a ConfirmModal and surfaced with a toast.
  */
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
-import { RefreshCw, Search, Lock, LockOpen, UserX, UserCheck, LogOut, Filter } from "lucide-react";
+import {
+  RefreshCw, Search, Lock, LockOpen, UserX, UserCheck, LogOut, Filter,
+  Trophy,
+} from "lucide-react";
 import client from "../../api/client";
 import Spinner from "../../components/Spinner";
 import {
   Panel, PageHeader, Badge, Pagination, Empty, Avatar, ConfirmModal, Th,
+  LiveIndicator,
 } from "../../components/admin/ui";
 import { STATUS_TONE, fmtDate } from "../../components/admin/utils";
+import usePoll from "../../components/admin/usePoll";
 
-/** Simple debouncer for the search box (avoids hammering the API per keystroke). */
 function useDebounced(value, ms = 350) {
   const [v, setV] = useState(value);
   useEffect(() => {
@@ -38,36 +42,29 @@ export default function AdminUsers() {
   const [role, setRole] = useState("");
   const [status, setStatus] = useState("");
   const [busyId, setBusyId] = useState(null);
-  const [confirm, setConfirm] = useState(null); // { user, action }
-
-  // Sorting lives client-side (current page) — the server already orders
-  // the full set by createdAt desc.
+  const [confirm, setConfirm] = useState(null);
   const [sort, setSort] = useState({ key: null, dir: "asc" });
 
-  const load = useCallback(() => {
-    client
-      .get("/api/admin/users", {
+  const { refreshing, lastUpdated, refresh } = usePoll(
+    useCallback(() =>
+      client.get("/api/admin/users", {
         params: {
           page, limit: 15,
           search: debouncedSearch || undefined,
           role: role || undefined,
           status: status || undefined,
         },
-      })
-      .then(({ data }) => {
+      }).then(({ data }) => {
         setRows(data.data.users);
         setTotal(data.data.total);
         setError("");
-      })
-      .catch((err) => {
-        // Surface the real reason (403/401/network…) instead of silently
-        // rendering an empty table that looks like a bug.
+      }).catch((err) => {
         setRows([]);
         setError(err.response?.data?.message || "Could not load users. Is the backend reachable?");
-      });
-  }, [page, debouncedSearch, role, status]);
-
-  useEffect(() => { load(); }, [load]);
+      }),
+    [page, debouncedSearch, role, status]),
+    [page, debouncedSearch, role, status]
+  );
 
   const onSort = (key) => {
     setSort((s) => (s.key === key && s.dir === "asc" ? { key, dir: "desc" } : { key, dir: "asc" }));
@@ -92,7 +89,7 @@ export default function AdminUsers() {
     try {
       await client.patch(`/api/admin/users/${id}/${action}`);
       toast.success(successMsg);
-      load();
+      refresh();
     } catch (err) {
       toast.error(err.response?.data?.message || `Could not ${action.replace("_", " ")} user`);
     } finally {
@@ -106,7 +103,7 @@ export default function AdminUsers() {
     try {
       const { data } = await client.delete(`/api/admin/users/${id}/sessions`);
       toast.success(data.message || "User signed out of every device");
-      load();
+      refresh();
     } catch {
       toast.error("Could not sign the user out");
     } finally {
@@ -130,7 +127,12 @@ export default function AdminUsers() {
         title="Users"
         subtitle={`${total} account${total === 1 ? "" : "s"} across the platform`}
         icon={Filter}
-        action={rows && <Badge tone="cyan">{total} total</Badge>}
+        action={
+          <div className="flex items-center gap-2">
+            <LiveIndicator lastUpdated={lastUpdated} refreshing={refreshing} />
+            {rows && <Badge tone="cyan">{total} total</Badge>}
+          </div>
+        }
       />
 
       <Panel title="Filters">
@@ -156,7 +158,9 @@ export default function AdminUsers() {
             <option value="deactivated">Deactivated</option>
             <option value="unverified">Unverified</option>
           </select>
-          <button onClick={load} className="admin-btn-secondary" title="Refresh"><RefreshCw className="h-4 w-4" /> Refresh</button>
+          <button onClick={refresh} className="admin-btn-secondary" title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
+          </button>
         </div>
       </Panel>
 
@@ -164,15 +168,16 @@ export default function AdminUsers() {
         {error ? (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-rose-500/25 bg-rose-500/10 px-6 py-10 text-center">
             <span className="text-sm font-semibold text-rose-200">{error}</span>
-            <button onClick={load} className="admin-btn-secondary !px-3 !py-1.5 text-xs">
-              <RefreshCw className="h-3.5 w-3.5" /> Retry
+            <button onClick={refresh} className="admin-btn-secondary !px-3 !py-1.5 text-xs">
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} /> Retry
             </button>
           </div>
         ) : !rows ? <Spinner label="Loading users…" /> : rows.length === 0 ? (
           <Empty text="No users match these filters." />
         ) : (
           <>
-            <div className="overflow-x-auto">
+            {/* ── Desktop table ── */}
+            <div className="hidden overflow-x-auto md:block">
               <table className="admin-table w-full min-w-[860px]">
                 <thead>
                   <tr>
@@ -198,30 +203,47 @@ export default function AdminUsers() {
                         <div>{u.email}</div>
                         <div className="text-slate-500">{u.phone}</div>
                       </td>
-                      <td><Badge tone={u.role === "admin" ? "brand" : "slate"}>{u.role}</Badge></td>
+                      <td>
+                        <div className="flex items-center gap-1.5">
+                          <Badge tone={u.role === "admin" ? "brand" : "slate"}>{u.role}</Badge>
+                          {u.role === "admin" && <Trophy className="h-3 w-3 text-violet-400" />}
+                        </div>
+                      </td>
                       <td><Badge tone={STATUS_TONE[u.status] || "slate"} dot>{u.status}</Badge></td>
                       <td className="!text-xs">{u.activeSessions}</td>
                       <td className="!text-xs text-slate-500">{fmtDate(u.lastLoginAt)}</td>
                       <td>
-                        <div className="flex flex-wrap justify-end gap-1.5">
-                          {u.status === "locked" ? (
-                            <IconBtn title="Unlock" onClick={() => setConfirm({ user: u, action: "unlock" })}><LockOpen className="h-3.5 w-3.5" /></IconBtn>
-                          ) : (
-                            <IconBtn title="Lock" danger onClick={() => setConfirm({ user: u, action: "lock" })} busy={busyId === u.id}><Lock className="h-3.5 w-3.5" /></IconBtn>
-                          )}
-                          {u.status === "deactivated" ? (
-                            <IconBtn title="Reactivate" onClick={() => setConfirm({ user: u, action: "reactivate" })}><UserCheck className="h-3.5 w-3.5" /></IconBtn>
-                          ) : (
-                            <IconBtn title="Deactivate" danger onClick={() => setConfirm({ user: u, action: "deactivate" })}><UserX className="h-3.5 w-3.5" /></IconBtn>
-                          )}
-                          <IconBtn title="Sign out everywhere" danger onClick={() => setConfirm({ user: u, action: "signout" })}><LogOut className="h-3.5 w-3.5" /></IconBtn>
-                        </div>
+                        <UserRowActions u={u} busyId={busyId} setConfirm={setConfirm} />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            {/* ── Mobile card list ── */}
+            <div className="grid gap-3 md:hidden">
+              {sorted().map((u) => (
+                <div key={u.id} className="admin-row-card rounded-xl border border-slate-400/10 bg-slate-900/40 p-4">
+                  <Link to={`/admin/users/${u.id}`} className="flex items-center gap-3">
+                    <Avatar name={u.name} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-white">{u.name}</p>
+                      <p className="truncate text-xs text-slate-500">{u.email} · {u.phone || "no phone"}</p>
+                    </div>
+                    <Badge tone={u.role === "admin" ? "brand" : "slate"}>{u.role}</Badge>
+                  </Link>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                    <Badge tone={STATUS_TONE[u.status] || "slate"} dot>{u.status}</Badge>
+                    <span className="text-[11px] text-slate-500">Last login {fmtDate(u.lastLoginAt)}</span>
+                  </div>
+                  <div className="mt-3 flex justify-end gap-1.5">
+                    <UserRowActions u={u} busyId={busyId} setConfirm={setConfirm} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
             <Pagination page={page} total={total} limit={15} onChange={setPage} />
           </>
         )}
@@ -247,13 +269,31 @@ export default function AdminUsers() {
   );
 }
 
+function UserRowActions({ u, busyId, setConfirm }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-1.5">
+      {u.status === "locked" ? (
+        <IconBtn title="Unlock" onClick={() => setConfirm({ user: u, action: "unlock" })}><LockOpen className="h-3.5 w-3.5" /></IconBtn>
+      ) : (
+        <IconBtn title="Lock" danger onClick={() => setConfirm({ user: u, action: "lock" })} busy={busyId === u.id}><Lock className="h-3.5 w-3.5" /></IconBtn>
+      )}
+      {u.status === "deactivated" ? (
+        <IconBtn title="Reactivate" onClick={() => setConfirm({ user: u, action: "reactivate" })}><UserCheck className="h-3.5 w-3.5" /></IconBtn>
+      ) : (
+        <IconBtn title="Deactivate" danger onClick={() => setConfirm({ user: u, action: "deactivate" })}><UserX className="h-3.5 w-3.5" /></IconBtn>
+      )}
+      <IconBtn title="Sign out everywhere" danger onClick={() => setConfirm({ user: u, action: "signout" })}><LogOut className="h-3.5 w-3.5" /></IconBtn>
+    </div>
+  );
+}
+
 function IconBtn({ children, onClick, danger, busy, title }) {
   return (
     <button
       onClick={onClick}
       disabled={busy}
       title={title}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition disabled:opacity-40 ${
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition active:scale-95 disabled:opacity-40 ${
         danger
           ? "border-rose-500/25 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
           : "border-slate-400/15 bg-slate-900/40 text-slate-300 hover:border-emerald-400/40 hover:text-emerald-300"

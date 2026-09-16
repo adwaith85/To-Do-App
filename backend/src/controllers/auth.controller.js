@@ -322,8 +322,11 @@ export const login = asyncHandler(async (req, res) => {
     throw ApiError.unauthorized("Incorrect credentials.");
   }
 
-  /* ---- Soft-deleted account? Same generic error (no existence leak). ---- */
+  /* ---- Soft-deleted account? Same generic error (no existence leak).
+   * A dummy bcrypt compare keeps the response timing equal to a real
+   * password check, so attackers can't delay-probe deleted accounts. ---- */
   if (user.isDeleted) {
+    await verifyPassword(password, "$2a$12$C6UzMDM.H6dfI/f/IKcEeO1R9cD7nFt0QkCwLPUnZ0eKBHhP1JBTO");
     await logAuthEvent({
       userId: user._id, action: "LOGIN_FAILED", status: "failed_locked",
       req, meta: { reason: "account_deleted" },
@@ -362,6 +365,23 @@ export const login = asyncHandler(async (req, res) => {
       );
     }
     throw ApiError.unauthorized("Incorrect credentials.");
+  }
+
+  /* ---- Password verified — ONLY now is it safe to reveal account state.
+   * Before this point every failure path answers generically so attackers
+   * can't tell a real account from a fake one; with the correct password
+   * the legitimate owner deserves a real explanation. ---- */
+  if (user.isDeleted) {
+    await logAuthEvent({
+      userId: user._id, action: "LOGIN_BLOCKED_DELETED", status: "failed_locked",
+      req, meta: { reason: "account_deleted_after_password" },
+    });
+    throw new ApiError(
+      403,
+      "Your account has been deactivated and can no longer log in. Contact support for help.",
+      [],
+      "ACCOUNT_DEACTIVATED"
+    );
   }
 
   /* ---- Verification gate ---- */
@@ -466,7 +486,12 @@ export const verifyLoginOtp = asyncHandler(async (req, res) => {
     throw ApiError.unauthorized("Login session expired. Please sign in again.", "TWO_FACTOR_EXPIRED");
   }
   if (user.isDeleted) {
-    throw ApiError.unauthorized("This account is no longer active.", "ACCOUNT_DEACTIVATED");
+    throw new ApiError(
+      403,
+      "Your account has been deactivated and can no longer log in. Contact support for help.",
+      [],
+      "ACCOUNT_DEACTIVATED"
+    );
   }
   if (user.isLocked()) {
     throw new ApiError(423, "Account temporarily locked. Try again later.", [], "ACCOUNT_LOCKED");
@@ -599,6 +624,17 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ email }).select("+password");
   if (!user) throw ApiError.badRequest("Invalid or expired reset code.");
+
+  // The OTP gate already proves we own this inbox; if the account was
+  // deactivated mid-reset, say so plainly instead of burning the code.
+  if (user.isDeleted) {
+    throw new ApiError(
+      403,
+      "Your account has been deactivated and can no longer log in. Contact support for help.",
+      [],
+      "ACCOUNT_DEACTIVATED"
+    );
+  }
 
   try {
     await verifyOtpForTarget("password_reset", email, otp);

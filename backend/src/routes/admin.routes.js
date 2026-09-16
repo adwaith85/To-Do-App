@@ -23,6 +23,8 @@ import {
   adminLoginTrendQuery,
   adminRateLimitsQuery,
   adminAuditQuery,
+  adminMessagesQuery,
+  updateMessageSchema,
 } from "../validations/index.js";
 import {
   listUsers,
@@ -48,6 +50,10 @@ import {
   statsLoginTrend,
   statsRateLimits,
   listAuditLog,
+  listMessages,
+  getMessage,
+  updateMessage,
+  deleteMessage,
 } from "../controllers/admin.controller.js";
 
 const router = Router();
@@ -87,5 +93,11 @@ router.get("/stats/rate-limits", validate({ query: adminRateLimitsQuery }), stat
 
 /* ---- Section E: audit log ---- */
 router.get("/audit-log", validate({ query: adminAuditQuery }), listAuditLog);
+
+/* ---- Section F: contact / support messages ---- */
+router.get("/messages",        validate({ query: adminMessagesQuery }), listMessages);
+router.get("/messages/:id",    validate({ params: mongoIdParamSchema }), getMessage);
+router.patch("/messages/:id",  validate({ params: mongoIdParamSchema, body: updateMessageSchema }), updateMessage);
+router.delete("/messages/:id", validate({ params: mongoIdParamSchema }), deleteMessage);
 
 export default router;

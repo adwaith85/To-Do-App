@@ -24,8 +24,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import { LifeBuoy } from "lucide-react";
 import client from "../api/client";
 import AuthLayout from "../components/AuthLayout";
+import HelpModal from "../components/HelpModal";
 import { useAuth } from "../context/useAuth";
 import { getRemembered, setRemembered, clearRemembered } from "../utils/rememberMe";
 
@@ -62,6 +64,7 @@ export default function Login() {
   const [otpError, setOtpError] = useState("");
   const [rememberMeChosen, setRememberMeChosen] = useState(false);
   const [verifying2fa, setVerifying2fa] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   /* ---- Visual captcha state ---- */
   const [captcha, setCaptcha] = useState(null);    // { svg, token }
@@ -420,6 +423,18 @@ export default function Login() {
           </button>
         </form>
       )}
+
+      {/* Floating support affordance */}
+      <button
+        type="button"
+        onClick={() => setShowHelp(true)}
+        className="fixed bottom-5 right-5 z-[40] inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-4 py-2.5 text-sm font-semibold text-slate-200 shadow-2xl shadow-black/50 backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-brand-500/50 hover:bg-brand-500/15 hover:text-white"
+      >
+        <LifeBuoy className="h-4 w-4 text-brand-300" />
+        Need help?
+      </button>
+
+      <HelpModal open={showHelp} onClose={() => setShowHelp(false)} />
     </AuthLayout>
   );
 }

@@ -1,23 +1,5 @@
-/**
- * Axios instance with JWT wiring.
- *
- * Token strategy:
- *  - Access token lives ONLY in memory (this module) — never localStorage,
- *    so an XSS breach can't steal a long-lived credential.
- *  - The refresh token rides in an httpOnly cookie managed by the backend.
- *
- * Interceptors:
- *  - request : attach `Authorization: Bearer <accessToken>` when present
- *  - response: on 401 from a protected endpoint, run ONE shared refresh
- *              call (single-flight), then replay the original request.
- *              Concurrent 401s queue behind the same refresh promise.
- */
 import axios from "axios";
 
-/**
- * No environment files on the frontend by design — the API location is
- * baked in here. Change this single constant when deploying.
- */
 export const API_BASE_URL = "http://localhost:5050";
 
 const client = axios.create({
@@ -34,11 +16,7 @@ export const setAccessToken = (token) => {
   accessToken = token;
 };
 
-/* ---- Cookie helpers ----
- * Cookies are shared across ports on localhost, so the SPA can read what
- * the API set. The backend sets a readable `appSession` marker alongside
- * the httpOnly refresh token; presence means a session exists right now.
- */
+
 const SESSION_MARKER = "appSession";
 
 function readCookie(name) {

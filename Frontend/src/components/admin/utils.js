@@ -51,3 +51,19 @@ export const TODO_PRIORITY_TONE = {
   medium: "amber",
   low: "green",
 };
+
+/** Support-message status → badge tone mapping. */
+export const STATUS_TONE_MSG = {
+  new: "amber",
+  read: "cyan",
+  resolved: "green",
+};
+
+/** Support-message category → badge tone mapping. */
+export const CATEGORY_TONE_MSG = {
+  login: "red",
+  account: "amber",
+  bug: "red",
+  billing: "brand",
+  other: "slate",
+};
