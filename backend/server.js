@@ -16,7 +16,7 @@ async function bootstrap() {
 
   try {
     // 1. MongoDB MUST connect successfully first
-    mongoose.connect(process.env.MONGO_URI);
+    await mongoose.connect(process.env.MONGO_URI);
 
     console.log("[server] Database ready");
 

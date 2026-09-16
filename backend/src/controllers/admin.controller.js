@@ -24,6 +24,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { getClientIp, getDevice } from "../utils/history.util.js";
 import { logAdminAction } from "../utils/adminAudit.util.js";
 import { sendAccountStatusEmail } from "../utils/mailer.util.js";
+import { revokeAllSessions } from "../services/token.service.js";
 
 const LOCK_MINUTES = parseInt(process.env.LOCK_TIME_MINUTES || "60", 10);
 
@@ -292,10 +293,13 @@ export const reactivateUser = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "Account reactivated.", data: { user: adminUserView(user) } });
 });
 
-/** DELETE /api/admin/users/:id/sessions — force logout (revoke everything). */
+/** DELETE /api/admin/users/:id/sessions — force logout (revoke everything).
+ *  Uses revokeAllSessions so the user's remember-me session is also cleared —
+ *  otherwise their cached remember-me cookie would silently auto-login the
+ *  account again on the next page load, undoing the force sign-out. */
 export const forceLogoutUser = asyncHandler(async (req, res) => {
   const user = await findUserOr404(req.params.id);
-  await User.revokeAllRefreshTokens(user._id);
+  await revokeAllSessions(user._id);
 
   await logAdminAction({
     adminId: req.user._id, action: "force_logout_user", targetType: "User",

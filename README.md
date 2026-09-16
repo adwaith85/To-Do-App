@@ -88,6 +88,9 @@ The backend reads everything from `backend/.env`. Highlights:
 - `GET /sessions` lists active devices (IP, device label, remembered?, current badge)
 - `DELETE /sessions/:id` revokes one device remotely
 - Logout blacklists the presented refresh token forever (replay = 401)
+- Logout also revokes **that account's** remember-me (cookie + server session),
+  so refreshing after a logout can never auto-login — while other accounts on
+  the same browser keep their sessions untouched
 - Logout-all revokes + blacklists every session
 
 **Password reset**

@@ -3,11 +3,16 @@
  *
  * When a user signs in with Remember Me ticked, we keep their identifier
  * and password in localStorage so the login form is pre-filled on that
- * device — until they uncheck it or log out (both clear it).
+ * device — until they uncheck it (which clears it).
  *
- * NOTE: this mirrors the classic "remember password" behaviour the user
- * expects. The real session is still the httpOnly refresh cookie; the
- * stored copy is convenience-only and is wiped on logout.
+ * SINGLE-ACCOUNT RULE: only ONE account is ever remembered per browser.
+ * The FIRST account that signs in with Remember Me owns the slot; signing
+ * in with a different account does NOT overwrite it (that account's
+ * remember-me data is simply not kept). This keeps the login page always
+ * pre-filled with the first account's details and discards the rest.
+ *
+ * NOTE: the real session is still the httpOnly refresh cookie; the stored
+ * copy is convenience-only for pre-filling the login form.
  */
 const KEY = "securetodo.remembered";
 
@@ -27,6 +32,12 @@ export function getRemembered() {
 
 export function setRemembered(identifier, password) {
   try {
+    const existing = getRemembered();
+    if (existing && existing.identifier !== identifier) {
+      // A different account is already remembered → keep the FIRST account,
+      // delete this one's remember-me data (never overwrite).
+      return;
+    }
     localStorage.setItem(KEY, JSON.stringify({ identifier, password }));
   } catch {
     /* storage unavailable — the session cookie still keeps them logged in */

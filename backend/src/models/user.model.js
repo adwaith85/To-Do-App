@@ -137,9 +137,11 @@ const userSchema = new mongoose.Schema(
     deactivatedAt: { type: Date, default: null },
 
     /**
-     * Persistent "remember me" session — a single long-lived token hash
-     * that survives logout. When present, the auto-login endpoint can
-     * restore a session without credentials. Cleared on password reset.
+     * Persistent "remember me" session — a single long-lived token hash.
+     * When present, the auto-login endpoint can restore a session without
+     * credentials. Cleared on password reset, and revoked on explicit
+     * logout (revokeCurrentSession) so a logged-out account can never
+     * auto-login again.
      */
     rememberMeSession: {
       tokenHash: { type: String, default: null },
@@ -276,8 +278,8 @@ userSchema.statics.revokeAllRefreshTokens = function (userId) {
 /* ------------------------------------------------------------------ */
 
 /**
- * Set a persistent remember-me token hash. This survives logout and
- * allows auto-login for 7 days.
+ * Set a persistent remember-me token hash. Allows auto-login for 7 days;
+ * revoked on explicit logout (revokeCurrentSession).
  */
 userSchema.methods.setRememberMe = function (tokenHash) {
   this.rememberMeSession = {

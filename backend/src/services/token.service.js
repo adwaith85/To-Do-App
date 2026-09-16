@@ -145,7 +145,8 @@ export async function issueSession(user, req, res, { rememberMe = false, role } 
   });
   setRefreshCookie(res, refreshToken, { rememberMe });
 
-  // Remember-me: create a persistent token that survives logout
+  // Remember-me: persistent 30-day token (auto-login on page loads within
+  // its lifetime — but an explicit logout revokes it, see revokeCurrentSession).
   if (rememberMe) {
     const rememberToken = signRefreshToken(user, { rememberMe: true, role });
     await user.setRememberMe(hashToken(rememberToken));
@@ -248,9 +249,16 @@ export async function rotateRefreshToken(rawToken, req, res) {
  * Logout for ONE device:
  *   - remove the presented token's hash from user.refreshTokens
  *   - ADD it to the permanent-ish blacklist so replays are denied forever
- *     (until its natural expiry purges the row).
+ *     (until its natural expiry purges the row)
+ *   - if the remember-me cookie belongs to THE SAME account, its session
+ *     + cookie are revoked too, so an explicit logout can NEVER be undone
+ *     by auto-login on the next page refresh.
  *
  * Safe/idempotent: missing or garbage cookies simply do nothing.
+ * Per-account: a remember-me cookie belonging to a DIFFERENT account is
+ * deliberately left intact, so logging out one account on a shared browser
+ * never kills the other accounts' ability to stay signed in.
+ *
  * @returns {Promise<string|null>} userId whose session ended, if known.
  */
 export async function revokeCurrentSession(req, res) {
@@ -275,10 +283,49 @@ export async function revokeCurrentSession(req, res) {
     InvalidatedToken.invalidateMany(userId, [deadHash], naturalExpiry, "logout"),
   ]);
 
-  // NOTE: We do NOT clear remember-me cookie here — it persists for 7 days
-  // regardless of logout, enabling auto-login on next visit.
+  // Terminate auto-login for THIS account only.
+  await revokeRememberMeIfOwned(req, res, userId);
 
   return userId ?? null;
+}
+
+/**
+ * Clear + blacklist the remember-me session (cookie + persisted hash) ONLY
+ * when it belongs to the account that is logging out. A remember-me cookie
+ * from a different account is left untouched so that account stays logged
+ * in / restorable on this browser.
+ */
+async function revokeRememberMeIfOwned(req, res, userId) {
+  const rememberRaw = getRememberMeFromRequest(req);
+  if (!rememberRaw) return;
+
+  let payload;
+  try {
+    payload = verifyRefreshToken(rememberRaw);
+  } catch {
+    // Malformed/expired remember-me cookie — nothing meaningful to keep.
+    clearRememberMeCookie(res);
+    return;
+  }
+
+  if (String(payload.sub) !== String(userId)) return; // another account → leave it
+
+  const rememberHash = hashToken(rememberRaw);
+  await Promise.all([
+    InvalidatedToken.invalidateMany(
+      userId,
+      [rememberHash],
+      new Date(payload.exp * 1000),
+      "logout"
+    ),
+    // Only null out the server-side session if it still holds the SAME hash
+    // (avoid clobbering a session that was already rotated server-side).
+    User.updateOne(
+      { _id: userId, "rememberMeSession.tokenHash": rememberHash },
+      { $set: { "rememberMeSession.tokenHash": null, "rememberMeSession.expiresAt": null } }
+    ),
+  ]);
+  clearRememberMeCookie(res);
 }
 
 /**

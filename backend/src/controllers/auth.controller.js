@@ -695,12 +695,14 @@ export const autoLogin = asyncHandler(async (req, res) => {
 /**
  * Kill the current device's session server-side and clear the cookie.
  * The presented refresh token is BLACKLISTED so it can never be reused.
- * Remember-me cookie is PRESERVED — user can auto-login on next visit.
+ * If the remember-me cookie belongs to this same account, its session AND
+ * cookie are revoked too — an explicit logout is never undone by auto-login.
+ * A remember-me cookie belonging to a DIFFERENT account is left intact so
+ * other accounts on the same browser stay signed in.
  */
 export const logout = asyncHandler(async (req, res) => {
   const userId = await revokeCurrentSession(req, res);
   clearRefreshCookie(res); // always, even without a valid cookie
-  // NOTE: remember-me cookie is NOT cleared — persists for auto-login
 
   if (userId) await logAuthEvent({ userId, action: "LOGOUT", req });
 
@@ -713,7 +715,8 @@ export const logout = asyncHandler(async (req, res) => {
 
 /**
  * Revoke + blacklist every session across ALL devices.
- * ALSO clears remember-me — this is the only way to kill it.
+ * ALSO clears remember-me on every device (logout clears it only for the
+ * current device/account).
  */
 export const logoutAll = asyncHandler(async (req, res) => {
   await revokeAllSessions(req.user._id);
