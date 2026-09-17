@@ -6,6 +6,8 @@
  * identity — see index.css .admin-*) .
  */
 import { X, ArrowLeft, ArrowRight, Inbox, RefreshCw } from "lucide-react";
+import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 /* ------------------------------------------------------------------ */
 /* Avatar                                                              */
@@ -232,7 +234,7 @@ export function Pagination({ page, total, limit, onChange }) {
       <span className="text-xs text-slate-500">
         Page <b className="text-slate-300">{page}</b> of {pages} · {total} rows
       </span>
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <button
           className="admin-btn-ghost !px-2.5 !py-1.5 text-xs disabled:opacity-30"
           disabled={page <= 1}
@@ -285,9 +287,17 @@ export function Empty({ text = "Nothing here yet.", icon }) {
  * a toast in the calling page.
  */
 export function ConfirmModal({ open, title, message, confirmLabel = "Confirm", tone = "danger", loading = false, onConfirm, onCancel }) {
+  useEffect(() => {
+    if (!open) return;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [open]);
+
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
       <div className="animate-modal-backdrop absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
       <div className="admin-glass animate-modal-sheet relative w-full max-w-md p-6">
         <div className="mb-1 flex items-start justify-between gap-3">
@@ -309,6 +319,7 @@ export function ConfirmModal({ open, title, message, confirmLabel = "Confirm", t
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

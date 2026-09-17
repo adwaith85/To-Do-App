@@ -22,6 +22,7 @@ import {
 } from "../../components/admin/ui";
 import { STATUS_TONE, fmtDate } from "../../components/admin/utils";
 import usePoll from "../../components/admin/usePoll";
+import UserDetailModal from "../../components/admin/UserDetailModal";
 
 function useDebounced(value, ms = 350) {
   const [v, setV] = useState(value);
@@ -44,6 +45,7 @@ export default function AdminUsers() {
   const [busyId, setBusyId] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const [selectedUserId, setSelectedUserId] = useState(null);
 
   const { refreshing, lastUpdated, refresh } = usePoll(
     useCallback(() =>
@@ -122,7 +124,7 @@ export default function AdminUsers() {
   const activeConfirm = confirm && confirmCopy[confirm.action];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 w-full max-w-full overflow-x-hidden sm:overflow-visible">
       <PageHeader
         title="Users"
         subtitle={`${total} account${total === 1 ? "" : "s"} across the platform`}
@@ -192,12 +194,12 @@ export default function AdminUsers() {
                 </thead>
                 <tbody>
                   {sorted().map((u) => (
-                    <tr key={u.id}>
+                    <tr key={u.id} onClick={() => setSelectedUserId(u.id)} className="cursor-pointer">
                       <td>
-                        <Link to={`/admin/users/${u.id}`} className="group flex items-center gap-3 font-semibold text-slate-100">
+                        <div className="group flex items-center gap-3 font-semibold text-slate-100">
                           <Avatar name={u.name} />
                           <span className="truncate group-hover:text-cyan-300">{u.name}</span>
-                        </Link>
+                        </div>
                       </td>
                       <td className="!text-xs">
                         <div>{u.email}</div>
@@ -222,22 +224,22 @@ export default function AdminUsers() {
             </div>
 
             {/* ── Mobile card list ── */}
-            <div className="grid gap-3 md:hidden">
+            <div className="grid grid-cols-1 gap-3 md:hidden">
               {sorted().map((u) => (
-                <div key={u.id} className="admin-row-card rounded-xl border border-slate-400/10 bg-slate-900/40 p-4">
-                  <Link to={`/admin/users/${u.id}`} className="flex items-center gap-3">
+                <div key={u.id} onClick={() => setSelectedUserId(u.id)} className="admin-row-card cursor-pointer min-w-0 w-full rounded-xl border border-slate-400/10 bg-slate-900/40 p-4">
+                  <div className="flex w-full min-w-0 items-center gap-3 text-left outline-none">
                     <Avatar name={u.name} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-white">{u.name}</p>
                       <p className="truncate text-xs text-slate-500">{u.email} · {u.phone || "no phone"}</p>
                     </div>
                     <Badge tone={u.role === "admin" ? "brand" : "slate"}>{u.role}</Badge>
-                  </Link>
+                  </div>
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                     <Badge tone={STATUS_TONE[u.status] || "slate"} dot>{u.status}</Badge>
-                    <span className="text-[11px] text-slate-500">Last login {fmtDate(u.lastLoginAt)}</span>
+                    <span className="truncate text-[11px] text-slate-500">Last login {fmtDate(u.lastLoginAt)}</span>
                   </div>
-                  <div className="mt-3 flex justify-end gap-1.5">
+                  <div className="mt-3 flex flex-wrap justify-end gap-1.5">
                     <UserRowActions u={u} busyId={busyId} setConfirm={setConfirm} />
                   </div>
                 </div>
@@ -265,6 +267,9 @@ export default function AdminUsers() {
           else if (confirm.action === "reactivate") runAction(confirm.user.id, "reactivate", `${confirm.user.name} reactivated`);
         }}
       />
+
+      {/* User Detail Modal */}
+      <UserDetailModal userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
     </div>
   );
 }
@@ -290,7 +295,10 @@ function UserRowActions({ u, busyId, setConfirm }) {
 function IconBtn({ children, onClick, danger, busy, title }) {
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.(e);
+      }}
       disabled={busy}
       title={title}
       className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition active:scale-95 disabled:opacity-40 ${

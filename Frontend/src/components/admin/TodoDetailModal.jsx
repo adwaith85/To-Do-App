@@ -9,7 +9,18 @@
 import { X, Paperclip, Clock, CheckCircle2, Calendar, History } from "lucide-react";
 import { fmtDate } from "./utils";
 
+import { useEffect } from "react";
+import { createPortal } from "react-dom";
+
 export default function TodoDetailModal({ todo, onClose }) {
+  useEffect(() => {
+    if (!todo) return;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [todo]);
+
   if (!todo) return null;
 
   const tags = Array.isArray(todo.tags) ? todo.tags : [];
@@ -24,8 +35,8 @@ export default function TodoDetailModal({ todo, onClose }) {
       </div>
     );
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="animate-modal-backdrop absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="animate-modal-sheet relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-slate-400/15 bg-slate-950/95 shadow-2xl sm:max-w-2xl sm:rounded-2xl">
         {/* Header */}
@@ -170,7 +181,8 @@ export default function TodoDetailModal({ todo, onClose }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
