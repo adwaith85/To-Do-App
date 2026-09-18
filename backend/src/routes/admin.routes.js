@@ -25,6 +25,7 @@ import {
   adminAuditQuery,
   adminMessagesQuery,
   updateMessageSchema,
+  replyMessageSchema,
 } from "../validations/index.js";
 import {
   listUsers,
@@ -39,6 +40,7 @@ import {
   listLoginHistory,
   listLoginFailures,
   listActiveSessions,
+  authActivitySummary,
   listAllTodos,
   todoStats,
   listDeletedTodos,
@@ -53,6 +55,7 @@ import {
   listMessages,
   getMessage,
   updateMessage,
+  replyMessage,
   deleteMessage,
 } from "../controllers/admin.controller.js";
 
@@ -75,6 +78,7 @@ router.delete("/users/:id/sessions/:sessionId", validate({ params: sessionIdPara
 /* ---- Section B: login & security ---- */
 router.get("/login-history", validate({ query: adminLoginHistoryQuery }), listLoginHistory);
 router.get("/login-history/failed", validate({ query: adminLoginFailuresQuery }), listLoginFailures);
+router.get("/security/summary", authActivitySummary);
 router.get("/sessions/active", validate({ query: adminSessionsQuery }), listActiveSessions);
 
 /* ---- Section C: todo activity ---- */
@@ -98,6 +102,7 @@ router.get("/audit-log", validate({ query: adminAuditQuery }), listAuditLog);
 router.get("/messages",        validate({ query: adminMessagesQuery }), listMessages);
 router.get("/messages/:id",    validate({ params: mongoIdParamSchema }), getMessage);
 router.patch("/messages/:id",  validate({ params: mongoIdParamSchema, body: updateMessageSchema }), updateMessage);
+router.post("/messages/:id/reply", validate({ params: mongoIdParamSchema, body: replyMessageSchema }), replyMessage);
 router.delete("/messages/:id", validate({ params: mongoIdParamSchema }), deleteMessage);
 
 export default router;

@@ -321,6 +321,10 @@ export const adminLoginHistoryQuery = z.object({
     .enum(["success", "failed", "failed_password", "failed_locked", "failed_otp"])
     .optional(),
   userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid userId").optional(),
+  /** Exact audit action, e.g. "LOGIN_SUCCESS", "REGISTER_INITIATED", "LOGOUT". */
+  action: z.string().trim().max(60).optional(),
+  /** Free-text search across the submitted identifier (email/phone). */
+  q: z.string().trim().max(120).optional(),
 });
 
 /** GET /api/admin/login-history/failed */
@@ -425,4 +429,13 @@ export const adminMessagesQuery = z.object({
 export const updateMessageSchema = z.object({
   status: z.enum(["new", "read", "resolved"]).optional(),
   adminNote: z.string().trim().max(500, "Admin note is too long").optional(),
+});
+
+/** POST /api/admin/messages/:id/reply */
+export const replyMessageSchema = z.object({
+  reply: z
+    .string({ required_error: "Reply is required" })
+    .trim()
+    .min(1, "Reply cannot be empty")
+    .max(2000, "Reply is too long"),
 });

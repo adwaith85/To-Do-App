@@ -55,7 +55,7 @@ function ChartTip({ active, payload, label }) {
 export default function AdminTodos() {
   const [tab, setTab] = useState("all");
   return (
-    <div className="space-y-5">
+    <div className="w-full max-w-full space-y-5 overflow-x-hidden">
       <PageHeader title="Todos" subtitle="Track every task detail stored in the database" icon={ListTodo} />
       <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (
@@ -123,7 +123,7 @@ function AllTodos() {
       {!rows ? <Spinner label="Loading…" /> : rows.length === 0 ? <Empty text="No todos match these filters." /> : (
         <>
           <div className="overflow-x-auto">
-            <table className="admin-table w-full min-w-[900px]">
+            <table className="admin-table admin-table-cards w-full md:min-w-[900px]">
               <thead>
                 <tr>
                   <th>Task</th>
@@ -139,9 +139,10 @@ function AllTodos() {
               <tbody>
                 {rows.map((t) => (
                   <tr key={t._id} className="cursor-pointer" onClick={() => setDetail(t)}>
-                    <td className="max-w-[280px]">
+                    <td data-label="Task" className="md:max-w-[280px]">
                       <div className="truncate font-semibold text-slate-200">{t.title || t.task}</div>
-                      {t.description && <div className="max-w-[260px] truncate text-xs text-slate-500">{t.description}</div>}
+                      {t.description && <div className="max-w-[260px] truncate text-xs text-slate-500 md:max-w-none">{t.description}</div>}
+                      {t.dueDate && <div className="text-[10px] text-slate-500">Due {fmtDate(t.dueDate)}</div>}
                       {Array.isArray(t.tags) && t.tags.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {t.tags.slice(0, 3).map((tag) => (
@@ -150,10 +151,10 @@ function AllTodos() {
                         </div>
                       )}
                     </td>
-                    <td className="!text-xs">{t.user?.name || t.user?.email || "—"}</td>
-                    <td><Badge tone={TODO_STATUS_TONE[t.status] || "slate"} dot>{t.status}</Badge></td>
-                    <td><Badge tone={TODO_PRIORITY_TONE[t.priority] || "slate"}>{t.priority}</Badge></td>
-                    <td>
+                    <td data-label="Owner" className="!text-xs">{t.user?.name || t.user?.email || "—"}</td>
+                    <td data-label="Status"><Badge tone={TODO_STATUS_TONE[t.status] || "slate"} dot>{t.status}</Badge></td>
+                    <td data-label="Priority"><Badge tone={TODO_PRIORITY_TONE[t.priority] || "slate"}>{t.priority}</Badge></td>
+                    <td data-label="Flags">
                       <div className="flex flex-wrap gap-1">
                         {t.isPinned && <span title="Pinned"><Pin className="h-3.5 w-3.5 text-cyan-400" /></span>}
                         {t.isArchived && <Badge tone="amber">archived</Badge>}
@@ -161,7 +162,7 @@ function AllTodos() {
                         {(!t.isPinned && !t.isArchived && !t.isDeleted) && <span className="text-[10px] text-slate-600">—</span>}
                       </div>
                     </td>
-                    <td className="!text-xs">
+                    <td data-label="Reminder" className="!text-xs">
                       {t.reminderAt ? (
                         <span className="flex items-center gap-1 text-amber-300">
                           <Clock className="h-3 w-3" />
@@ -169,8 +170,8 @@ function AllTodos() {
                         </span>
                       ) : <span className="text-slate-600">—</span>}
                     </td>
-                    <td className="!text-xs text-slate-500">{fmtDate(t.createdAt)}</td>
-                    <td className="text-right">
+                    <td data-label="Created" className="!text-xs text-slate-500">{fmtDate(t.createdAt)}</td>
+                    <td data-label="" className="text-right">
                       <button
                         onClick={(e) => { e.stopPropagation(); setDetail(t); }}
                         className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/25 bg-cyan-400/10 px-2 py-1 text-[11px] font-semibold text-cyan-300 transition active:scale-95 hover:bg-cyan-400/20"
@@ -182,36 +183,6 @@ function AllTodos() {
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* ── Mobile: card version of each todo ── */}
-          <div className="grid gap-3 md:hidden">
-            {rows.map((t) => (
-              <button
-                key={t._id}
-                onClick={() => setDetail(t)}
-                className="admin-row-card rounded-xl border border-slate-400/10 bg-slate-900/40 p-4 text-left"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate font-bold text-slate-100">{t.title || t.task}</p>
-                    <p className="truncate text-xs text-slate-500">{t.user?.name || t.user?.email}</p>
-                  </div>
-                  <Eye className="h-4 w-4 shrink-0 text-cyan-400" />
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <Badge tone={TODO_STATUS_TONE[t.status] || "slate"} dot>{t.status}</Badge>
-                  <Badge tone={TODO_PRIORITY_TONE[t.priority] || "slate"}>{t.priority}</Badge>
-                  {t.isPinned && <Pin className="h-3.5 w-3.5 text-cyan-400" />}
-                  {t.isArchived && <Badge tone="amber">archived</Badge>}
-                  {t.isDeleted && <Badge tone="red">deleted</Badge>}
-                </div>
-                <div className="mt-2 text-[11px] text-slate-500">
-                  {t.dueDate && <span className="mr-2">Due {fmtDate(t.dueDate)}</span>}
-                  Created {fmtDate(t.createdAt)}
-                </div>
-              </button>
-            ))}
           </div>
 
           <Pagination page={page} total={total} limit={15} onChange={setPage} />

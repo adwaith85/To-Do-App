@@ -69,7 +69,7 @@ export default function AdminMessages() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="w-full max-w-full space-y-5 overflow-x-hidden">
       <PageHeader
         title="Messages"
         subtitle="Support requests from the public login page — triage in one place"
@@ -134,49 +134,29 @@ export default function AdminMessages() {
           <>
             {/* Desktop table */}
             <div className="overflow-x-auto">
-              <table className="admin-table w-full min-w-[760px]">
+              <table className="admin-table admin-table-cards w-full md:min-w-[760px]">
                 <thead>
                   <tr><th>Status</th><th>From</th><th>Subject</th><th>Topic</th><th>Sent</th><th>Device</th></tr>
                 </thead>
                 <tbody>
                   {messages.map((m) => (
                     <tr key={m._id} onClick={() => openMessage(m)} className="cursor-pointer">
-                      <td><StatusBadge status={m.status} /></td>
-                      <td>
+                      <td data-label="Status"><StatusBadge status={m.status} /></td>
+                      <td data-label="From">
                         <div className="text-sm font-semibold text-slate-200">{m.name}</div>
                         <div className="text-[11px] text-slate-500">{m.email}</div>
                       </td>
-                      <td className="max-w-[240px]">
+                      <td data-label="Subject" className="md:max-w-[240px]">
                         <div className="truncate font-medium text-slate-200">{m.subject}</div>
                         <div className="truncate text-[11px] text-slate-500">{m.message}</div>
                       </td>
-                      <td><CategoryBadge category={m.category} /></td>
-                      <td className="whitespace-nowrap !text-xs text-slate-500">{fmtDate(m.createdAt, true)}</td>
-                      <td className="max-w-[140px] truncate !text-xs text-slate-500">{deviceLabel(m.userAgent)}</td>
+                      <td data-label="Topic"><CategoryBadge category={m.category} /></td>
+                      <td data-label="Sent" className="whitespace-nowrap !text-xs text-slate-500">{fmtDate(m.createdAt, true)}</td>
+                      <td data-label="Device" className="md:max-w-[140px] !text-xs text-slate-500">{deviceLabel(m.userAgent)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-
-            {/* Mobile cards */}
-            <div className="grid gap-3 md:hidden">
-              {messages.map((m) => (
-                <div key={m._id} onClick={() => openMessage(m)} className="admin-row-card cursor-pointer rounded-xl border border-slate-400/10 bg-slate-900/40 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-200">{m.subject}</p>
-                      <p className="truncate text-[11px] text-slate-500">{m.name} · {m.email}</p>
-                    </div>
-                    <StatusBadge status={m.status} />
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-xs text-slate-400">{m.message}</p>
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <CategoryBadge category={m.category} />
-                    <span className="text-[10px] text-slate-500">{fmtDate(m.createdAt, true)}</span>
-                  </div>
-                </div>
-              ))}
             </div>
 
             <Pagination page={page} total={data.total} limit={20} onChange={setPage} />
@@ -187,7 +167,7 @@ export default function AdminMessages() {
       <MessageDetailModal
         message={selected}
         onClose={() => setSelected(null)}
-        onChanged={() => refresh()}
+        onChanged={(msg) => { if (msg) setSelected(msg); refresh(); }}
       />
     </div>
   );

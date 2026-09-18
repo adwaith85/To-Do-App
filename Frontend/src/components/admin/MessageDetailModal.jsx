@@ -1,28 +1,29 @@
 /**
  * MessageDetailModal — full read + triage of one support message.
  *
- * Renders every stored field and gives the admin the three triage actions:
- * mark resolved, save an admin note, or delete. Every action mutates the
- * record and the parent re-polls so the list stays in sync.
+ * Renders every stored field and gives the admin the triage actions:
+ * reply to the sender's email, mark resolved, or delete. Replies are emailed
+ * to the address the message came from and recorded in a visible thread.
+ * Every action mutates the record and the parent re-polls to stay in sync.
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
-import { X, Mail, CheckCircle2, Trash2, Save, ShieldCheck, Monitor, Globe, StickyNote } from "lucide-react";
+import { X, Mail, CheckCircle2, Trash2, Send, ShieldCheck, Monitor, Globe, Check, Clock } from "lucide-react";
 import client from "../../api/client";
 import { StatusBadge, CategoryBadge } from "./badges";
 import { ConfirmModal } from "./ui";
 import { fmtDate } from "./utils";
 
 export default function MessageDetailModal({ message, onClose, onChanged }) {
-  const [note, setNote] = useState("");
-  const [savingNote, setSavingNote] = useState(false);
+  const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    setNote(message?.adminNote || "");
+    setReply("");
     if (message) {
       document.body.style.overflow = "hidden";
       return () => {
@@ -46,11 +47,24 @@ export default function MessageDetailModal({ message, onClose, onChanged }) {
     }
   };
 
-  const saveNote = () =>
-    patch({ adminNote: note.trim() }, note.trim() ? "Note saved." : "Note cleared.", setSavingNote);
-
   const resolve = () =>
     patch({ status: "resolved" }, "Message marked resolved.", setResolving);
+
+  const sendReply = async () => {
+    const body = reply.trim();
+    if (!body) return;
+    setSending(true);
+    try {
+      const { data } = await client.post(`/api/admin/messages/${message._id}/reply`, { reply: body });
+      setReply("");
+      toast.success(data.message || "Reply sent.");
+      if (data.data) onChanged?.(data.data.message);
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to send reply.");
+    } finally {
+      setSending(false);
+    }
+  };
 
   const del = async () => {
     setDeleting(true);
@@ -74,6 +88,8 @@ export default function MessageDetailModal({ message, onClose, onChanged }) {
         <span className={`text-right text-xs font-medium text-slate-200 ${mono ? "font-mono" : ""}`}>{value}</span>
       </div>
     );
+
+  const replies = message.replies || [];
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -134,23 +150,46 @@ export default function MessageDetailModal({ message, onClose, onChanged }) {
             </div>
           )}
 
-          {/* Admin note editor */}
+          {/* Reply to the sender */}
           <div className="mt-4">
             <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              <StickyNote className="h-3 w-3" /> Admin note
+              <Send className="h-3 w-3" /> Reply to {message.email}
             </p>
+
+            {replies.length > 0 && (
+              <div className="mb-3 space-y-2 rounded-xl border border-slate-400/10 bg-slate-900/30 p-3 empty:hidden">
+                {replies.map((r, i) => (
+                  <div key={i} className="rounded-lg border border-white/[0.05] bg-slate-950/40 px-3 py-2">
+                    <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                      <span className="inline-flex items-center gap-1 uppercase tracking-wide">
+                        {r.delivered ? <Check className="h-3 w-3 text-emerald-400" /> : <Clock className="h-3 w-3 text-amber-400" />}
+                        {r.delivered ? "Delivered" : "Not delivered"}
+                      </span>
+                      <span>· {fmtDate(r.sentAt, true)}</span>
+                      {r.to && <span className="truncate font-mono">→ {r.to}</span>}
+                    </div>
+                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300">{r.body}</p>
+                    {r.deliveryError && <p className="mt-1 text-[10px] text-rose-400">Delivery error: {r.deliveryError}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-              maxLength={500}
-              placeholder="Private note for the team (not visible to the user)…"
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              rows={4}
+              maxLength={2000}
+              placeholder={`Write a reply to ${message.name}… it will be emailed to ${message.email}.`}
               className="w-full resize-none rounded-xl border border-slate-400/15 bg-slate-950/40 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
             />
-            <button onClick={saveNote} disabled={savingNote} className="admin-btn-secondary mt-2">
-              {savingNote ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Save className="h-3.5 w-3.5" />}
-              {message.adminNote || note.trim() ? "Update note" : "Add note"}
-            </button>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button onClick={sendReply} disabled={sending || !reply.trim()} className="admin-btn !px-4 !py-2 text-xs">
+                {sending ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Send className="h-3.5 w-3.5" />}
+                Send reply
+              </button>
+              <span className="text-[10px] text-slate-500">{reply.trim().length}/2000</span>
+            </div>
           </div>
         </div>
 
@@ -158,7 +197,7 @@ export default function MessageDetailModal({ message, onClose, onChanged }) {
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-400/10 bg-slate-900/50 px-5 py-3">
           <span className="font-mono text-[10px] text-slate-500">{message._id}</span>
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={del} className="admin-btn-danger !px-3 !py-1.5 text-xs"> <Trash2 className="h-3.5 w-3.5" /> Delete</button>
+            <button onClick={() => setConfirmDelete(true)} className="admin-btn-danger !px-3 !py-1.5 text-xs"> <Trash2 className="h-3.5 w-3.5" /> Delete</button>
             {message.status !== "resolved" && (
               <button onClick={resolve} disabled={resolving} className="admin-btn-secondary !px-3 !py-1.5 text-xs">
                 {resolving ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <CheckCircle2 className="h-3.5 w-3.5" />}

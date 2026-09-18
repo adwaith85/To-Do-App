@@ -22,12 +22,17 @@ const ACTION_OPTIONS = [
   { value: "revoke_session", label: "Revoke session" },
   { value: "restore_todo", label: "Restore todo" },
   { value: "purge_todo", label: "Purge todo" },
+  { value: "resolve_message", label: "Resolve message" },
+  { value: "reply_message", label: "Reply to message" },
+  { value: "note_message", label: "Add note" },
+  { value: "delete_message", label: "Delete message" },
 ];
 
 const ACTION_TONE = {
   lock_user: "red", unlock_user: "green", deactivate_user: "red",
   reactivate_user: "green", force_logout_user: "amber", revoke_session: "amber",
   restore_todo: "green", purge_todo: "red",
+  resolve_message: "cyan", reply_message: "cyan", note_message: "slate", delete_message: "red",
 };
 
 export default function AdminAudit() {
@@ -44,7 +49,7 @@ export default function AdminAudit() {
   );
 
   return (
-    <div className="space-y-5">
+    <div className="w-full max-w-full space-y-5 overflow-x-hidden">
       <PageHeader
         title="Audit log"
         subtitle="Every lock, deactivate, purge and revoke is attributed to the acting admin"
@@ -79,15 +84,15 @@ export default function AdminAudit() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="admin-table w-full min-w-[720px]">
+              <table className="admin-table admin-table-cards w-full md:min-w-[720px]">
                 <thead>
                   <tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th><th>IP</th></tr>
                 </thead>
                 <tbody>
                   {data.events.map((e) => (
                     <tr key={e._id}>
-                      <td className="!text-xs text-slate-500">{fmtDate(e.createdAt, true)}</td>
-                      <td>
+                      <td data-label="When" className="!text-xs text-slate-500">{fmtDate(e.createdAt, true)}</td>
+                      <td data-label="Admin">
                         <div className="flex items-center gap-2.5">
                           <Avatar name={e.adminId?.name} size="sm" />
                           <div>
@@ -96,43 +101,21 @@ export default function AdminAudit() {
                           </div>
                         </div>
                       </td>
-                      <td><Badge tone={ACTION_TONE[e.action] || "slate"}>{e.action}</Badge></td>
-                      <td className="!text-xs">
+                      <td data-label="Action"><Badge tone={ACTION_TONE[e.action] || "slate"}>{e.action}</Badge></td>
+                      <td data-label="Target" className="!text-xs">
                         <div className="font-semibold text-slate-300">{e.targetType}</div>
                         <div className="font-mono text-[10px] text-slate-500">{String(e.targetId || "—").slice(0, 18)}</div>
                       </td>
-                      <td className="max-w-[200px] !text-xs text-slate-500">
+                      <td data-label="Details" className="!text-xs text-slate-500 md:max-w-[200px]">
                         {e.details && Object.keys(e.details).length > 0
                           ? <span className="truncate">{[Object.entries(e.details)[0]].map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(" · ")}</span>
                           : <span className="text-slate-600">—</span>}
                       </td>
-                      <td className="font-mono !text-xs">{e.ip}</td>
+                      <td data-label="IP" className="font-mono !text-xs">{e.ip}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-
-            {/* Mobile card list */}
-            <div className="grid gap-3 md:hidden">
-              {data.events.map((e) => (
-                <div key={e._id} className="admin-row-card rounded-xl border border-slate-400/10 bg-slate-900/40 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <Avatar name={e.adminId?.name} size="sm" />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-200">{e.adminId?.name || "Unknown"}</p>
-                        <p className="text-[10px] text-slate-500">{fmtDate(e.createdAt, true)} · {e.ip}</p>
-                      </div>
-                    </div>
-                    <Badge tone={ACTION_TONE[e.action] || "slate"}>{e.action}</Badge>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-400">
-                    <span className="font-semibold text-slate-300">{e.targetType}</span>
-                    <span className="font-mono text-slate-600"> · {String(e.targetId || "—").slice(0, 18)}</span>
-                  </p>
-                </div>
-              ))}
             </div>
 
             <Pagination page={page} total={data.total} limit={20} onChange={setPage} />

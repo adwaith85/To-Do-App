@@ -307,6 +307,52 @@
   .admin-table tbody tr:last-child td {
     border-bottom: none;
   }
+
+  /* ---------- Responsive data table (single table → stacked cards) ----------
+   * One <table> that becomes column cards on small screens. Each <td> must
+   * carry a `data-label` attribute; the label renders above the value.
+   * Right-aligned columns are re-aligned left so nothing overflows. */
+  .admin-table-cards thead { display: none; }
+  .admin-table-cards tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    border: 1px solid rgb(148 163 184 / 0.12);
+    border-radius: 0.75rem;
+    background: rgb(15 23 42 / 0.35);
+    padding: 0.625rem 0.375rem 0.375rem;
+  }
+  .admin-table-cards tbody tr:hover { background: rgb(255 255 255 / 0.02); }
+  .admin-table-cards tbody tr:last-child { margin-bottom: 0; }
+  .admin-table-cards td {
+    display: block;
+    width: 100%;
+    border: none;
+    padding: 0.4rem 0.75rem;
+    text-align: left !important;
+  }
+  .admin-table-cards td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(100 116 139 / 0.95);
+  }
+  .admin-table-cards td[data-label=""]::before { content: none; }
+  .admin-table-cards td[data-label=""] { padding-top: 0.65rem; }
+
+  /* Only morph into cards below md; keep the real table layout from md up. */
+  @media (min-width: 768px) {
+    .admin-table-cards thead { display: table-header-group; }
+    .admin-table-cards tr { display: table-row; margin-bottom: 0; border: none; border-radius: 0; background: none; padding: 0; }
+    .admin-table-cards tbody tr:hover { background: rgb(255 255 255 / 0.03); }
+    .admin-table-cards td { display: table-cell; width: auto; border-bottom: 1px solid rgb(255 255 255 / 0.04); padding: 0.75rem 1rem; }
+    .admin-table-cards td::before { content: none; }
+    .admin-table-cards td[data-label=""] { padding-top: 0.75rem; }
+    .admin-table-cards tbody tr:last-child td { border-bottom: none; }
+  }
 }
 
 /* ---------- Admin animations & transitions ---------- */

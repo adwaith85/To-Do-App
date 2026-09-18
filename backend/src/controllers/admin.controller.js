@@ -24,7 +24,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { getClientIp, getDevice } from "../utils/history.util.js";
 import { logAdminAction } from "../utils/adminAudit.util.js";
-import { sendAccountStatusEmail } from "../utils/mailer.util.js";
+import { sendAccountStatusEmail, sendSupportReplyEmail } from "../utils/mailer.util.js";
 import { revokeAllSessions } from "../services/token.service.js";
 
 const LOCK_MINUTES = parseInt(process.env.LOCK_TIME_MINUTES || "60", 10);
@@ -165,6 +165,81 @@ export const listUsers = asyncHandler(async (req, res) => {
       total,
       page: Math.max(1, parseInt(page, 10)),
       limit: size,
+    },
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Section B — Login & security monitoring                             */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/admin/security/summary — today's auth activity + live session counts.
+ *
+ * Powers the stat chips on the Login & Security page:
+ *   who signed up, who logged in, who failed, who logged out, how many
+ *   refresh-token rotations happened — plus how many users hold open
+ *   sessions right now and how many refresh tokens are out there.
+ */
+export const authActivitySummary = asyncHandler(async (_req, res) => {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const dayMatch = { createdAt: { $gte: start, $lt: tomorrow } };
+
+  const FAILED_STATUSES = ["failed", "failed_password", "failed_locked", "failed_otp"];
+
+  const [byAction, failedToday, sessionsInfo, totalEvents] = await Promise.all([
+    LoginHistory.aggregate([
+      { $match: dayMatch },
+      { $group: { _id: "$action", count: { $sum: 1 } } },
+    ]).option({ maxTimeMS: 10_000 }),
+    LoginHistory.countDocuments({ ...dayMatch, status: { $in: FAILED_STATUSES } }).maxTimeMS(10_000),
+    User.aggregate([
+      { $match: { $expr: { $gt: [{ $size: { $ifNull: ["$refreshTokens", []] } }, 0] } } },
+      {
+        $project: {
+          tokenCount: { $size: { $ifNull: ["$refreshTokens", []] } },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          activeUsers: { $sum: 1 },
+          totalSessions: { $sum: "$tokenCount" },
+        },
+      },
+    ]).option({ maxTimeMS: 10_000 }),
+    LoginHistory.countDocuments(dayMatch).maxTimeMS(10_000),
+  ]);
+
+  const count = (action) => {
+    const row = byAction.find((a) => a._id === action);
+    return row ? row.count : 0;
+  };
+  const sessions = sessionsInfo[0] || { activeUsers: 0, totalSessions: 0 };
+
+  res.status(200).json({
+    success: true,
+    data: {
+      today: {
+        totalEvents,
+        registrations: count("REGISTER_INITIATED"),
+        emailVerified: count("EMAIL_VERIFY_SUCCESS"),
+        logins: count("LOGIN_SUCCESS") + count("LOGIN_2FA_SUCCESS") + count("AUTO_LOGIN"),
+        failedLogins: failedToday,
+        logouts: count("LOGOUT") + count("LOGOUT_ALL"),
+        tokenRefreshes: count("TOKEN_REFRESHED"),
+        passwordResets: count("PASSWORD_RESET_SUCCESS"),
+        twoFactorAccepted: count("LOGIN_2FA_SUCCESS"),
+        twoFactorFailed: count("LOGIN_2FA_FAILED"),
+        tokenReuseDetected: count("TOKEN_REUSE_DETECTED"),
+        sessionsRevoked: count("SESSION_REVOKED"),
+      },
+      live: {
+        activeUsers: sessions.activeUsers,
+        totalSessions: sessions.totalSessions,
+      },
     },
   });
 });
@@ -356,14 +431,22 @@ export const listUserSessions = asyncHandler(async (req, res) => {
 /* Section B — Login & security monitoring                             */
 /* ------------------------------------------------------------------ */
 
-/** GET /api/admin/login-history — filterable full login history table. */
+/** GET /api/admin/login-history — filterable full login history table.
+ * Filters: status (success/failed subtypes), userId, exact action, free-text
+ * `q` on the submitted identifier, and an optional from/to date range.
+ * Each event comes with the resolved user (name/email) when one exists. */
 export const listLoginHistory = asyncHandler(async (req, res) => {
   const q = req.validatedQuery || {};
-  const { status, userId, page = 1, limit = 25 } = q;
+  const { status, userId, action, q: qText, page = 1, limit = 25 } = q;
   const filter = {};
 
   if (status) filter.status = status;
   if (userId) filter.user = userId;
+  if (action) filter.action = action;
+  if (qText) {
+    const re = new RegExp(String(qText).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [{ emailOrPhone: re }];
+  }
   const range = dateRange(req);
   if (Object.keys(range).length) filter.createdAt = range;
 
@@ -373,6 +456,7 @@ export const listLoginHistory = asyncHandler(async (req, res) => {
   const [total, rows] = await Promise.all([
     LoginHistory.countDocuments(filter).maxTimeMS(10_000),
     LoginHistory.find(filter)
+      .populate("user", "name email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(size)
@@ -380,9 +464,16 @@ export const listLoginHistory = asyncHandler(async (req, res) => {
       .lean(),
   ]);
 
+  const events = rows.map((e) => ({
+    ...e,
+    userInfo: e.user
+      ? { id: String(e.user._id), name: e.user.name || "", email: e.user.email || "" }
+      : null,
+  }));
+
   res.status(200).json({
     success: true,
-    data: { events: rows, total, page: Math.max(1, parseInt(page, 10)), limit: size },
+    data: { events, total, page: Math.max(1, parseInt(page, 10)), limit: size },
   });
 });
 
@@ -433,10 +524,19 @@ export const listLoginFailures = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: { byIp, byUser: usersResolved } });
 });
 
-/** GET /api/admin/sessions/active — every active session across all users. */
+/** GET /api/admin/sessions/active — every active session across all users.
+ *
+ * GROUPED BY USER so the admin gets a single row per person:
+ *   - sessionCount  = how many refresh tokens that user holds (multiple
+ *     devices = multiple tokens; never repeated rows in the list)
+ *   - sessions[]    = the per-token detail (device/system, IP, location,
+ *     remember-me, signed-in time, last refresh time) for the popup card
+ *
+ * `total` counts users holding ≥1 refresh token (rows shown), while
+ * `totalSessions` is the sum of every open refresh token across them. */
 export const listActiveSessions = asyncHandler(async (req, res) => {
   const q = req.validatedQuery || {};
-  const { page = 1, limit = 50 } = q;
+  const { page = 1, limit = 25 } = q;
   const skip = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
   const size = Math.min(200, parseInt(limit, 10));
 
@@ -444,7 +544,7 @@ export const listActiveSessions = asyncHandler(async (req, res) => {
     $expr: { $gt: [{ $size: { $ifNull: ["$refreshTokens", []] } }, 0] },
   };
 
-  const [totalUsers, rows] = await Promise.all([
+  const [total, rows] = await Promise.all([
     User.countDocuments(activeSessionsFilter).maxTimeMS(10_000),
     User.find(activeSessionsFilter)
       .select("name email phone refreshTokens")
@@ -454,28 +554,53 @@ export const listActiveSessions = asyncHandler(async (req, res) => {
       .lean(),
   ]);
 
-  const sessions = [];
-  for (const u of rows) {
-    for (const s of u.refreshTokens || []) {
-      sessions.push({
-        userId: u._id,
-        name: u.name,
-        email: u.email,
+  const users = rows
+    .map((u) => {
+      const sessions = (u.refreshTokens || []).map((s) => ({
         sessionId: String(s._id),
         ip: s.ip,
         device: s.device,
         location: s.location || "",
         rememberMe: s.rememberMe,
-        createdAt: s.createdAt,
+        signedInAt: s.createdAt,
         lastUsedAt: s.lastUsedAt,
-      });
-    }
-  }
-  sessions.sort((a, b) => new Date(b.lastUsedAt) - new Date(a.lastUsedAt));
+      }));
+
+      const distinct = (key) => new Set(sessions.map((s) => s[key]).filter(Boolean)).size;
+      const lastActive = sessions.reduce(
+        (max, s) => {
+          const t = new Date(s.lastUsedAt).getTime();
+          return t > max ? t : max;
+        },
+        0
+      );
+
+      return {
+        userId: String(u._id),
+        name: u.name,
+        email: u.email,
+        phone: u.phone || "",
+        sessionCount: sessions.length,
+        distinctDevices: distinct("device"),
+        distinctIps: distinct("ip"),
+        locations: [...new Set(sessions.map((s) => s.location).filter(Boolean))],
+        lastActiveAt: lastActive ? new Date(lastActive) : null,
+        sessions,
+      };
+    })
+    .sort((a, b) => new Date(b.lastActiveAt) - new Date(a.lastActiveAt));
+
+  const totalSessions = users.reduce((sum, u) => sum + u.sessionCount, 0);
 
   res.status(200).json({
     success: true,
-    data: { sessions, total: totalUsers, page: Math.max(1, parseInt(page, 10)), limit: size },
+    data: {
+      users,
+      total,
+      totalSessions,
+      page: Math.max(1, parseInt(page, 10)),
+      limit: size,
+    },
   });
 });
 
@@ -963,7 +1088,7 @@ export const updateMessage = asyncHandler(async (req, res) => {
 
   await logAdminAction({
     adminId: req.user._id,
-    action: "resolve_message",
+    action: status === "resolved" ? "resolve_message" : "note_message",
     targetType: "Message",
     targetId: msg._id,
     details: { status: msg.status, adminNote: (adminNote || "").slice(0, 200) },
@@ -971,6 +1096,49 @@ export const updateMessage = asyncHandler(async (req, res) => {
   });
 
   res.status(200).json({ success: true, message: "Message updated.", data: { message: msg } });
+});
+
+/** POST /api/admin/messages/:id/reply — email a support reply to the sender. */
+export const replyMessage = asyncHandler(async (req, res) => {
+  const { reply } = req.body;
+
+  const msg = await ContactMessage.findById(req.params.id);
+  if (!msg) throw ApiError.notFound("Message not found.");
+
+  const delivery = await sendSupportReplyEmail(msg.email, {
+    name: msg.name,
+    reply,
+    originalSubject: msg.subject,
+    original: msg.message,
+  });
+
+  msg.replies.push({
+    body: reply,
+    to: msg.email,
+    sentAt: new Date(),
+    delivered: delivery.delivered,
+    deliveryError: delivery.error || "",
+  });
+  await msg.save();
+
+  await logAdminAction({
+    adminId: req.user._id,
+    action: "reply_message",
+    targetType: "Message",
+    targetId: msg._id,
+    details: { email: msg.email, subject: (msg.subject || "").slice(0, 80), delivered: delivery.delivered },
+    req,
+  });
+
+  const message = delivery.delivered
+    ? `Reply sent to ${msg.email}.`
+    : "Reply recorded (SMTP not configured, email printed to server logs).";
+
+  res.status(200).json({
+    success: true,
+    message,
+    data: { message: msg, delivered: delivery.delivered },
+  });
 });
 
 /** DELETE /api/admin/messages/:id — permanently remove a message. */

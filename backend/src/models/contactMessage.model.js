@@ -45,6 +45,17 @@ const contactMessageSchema = new mongoose.Schema(
       default: null,
     },
     handledAt: { type: Date, default: null },
+
+    /** Thread of admin replies emailed to the sender. */
+    replies: [
+      {
+        body: { type: String, trim: true, maxlength: 2000 },
+        to: { type: String, default: "" },
+        sentAt: { type: Date, default: Date.now },
+        delivered: { type: Boolean, default: false },
+        deliveryError: { type: String, default: "" },
+      },
+    ],
   },
   { timestamps: true }
 );

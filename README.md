@@ -293,9 +293,10 @@ logout. No Postman or automated suite is required.
 | DELETE | `/api/admin/users/:id/sessions` | admin | force logout (all sessions) |
 | GET  | `/api/admin/users/:id/sessions` | admin | list user's active sessions |
 | DELETE | `/api/admin/users/:id/sessions/:sessionId` | admin | revoke one of the user's sessions |
-| GET  | `/api/admin/login-history` | admin | filterable login history |
+| GET  | `/api/admin/login-history` | admin | filterable auth feed (status/action/`q`/from/to, resolves user name+email) |
 | GET  | `/api/admin/login-history/failed` | admin | failures by IP/user |
-| GET  | `/api/admin/sessions/active` | admin | all active sessions |
+| GET  | `/api/admin/security/summary` | admin | today's regs/logins/failures/logouts/refreshes + live session/token counts |
+| GET  | `/api/admin/sessions/active` | admin | active sessions **grouped per user** with refresh-token count + per-token detail |
 | GET  | `/api/admin/todos` | admin | all todos, filterable |
 | GET  | `/api/admin/todos/stats` | admin | status/priority/user stats |
 | GET  | `/api/admin/todos/deleted` | admin | recycle bin |
@@ -311,4 +312,5 @@ logout. No Postman or automated suite is required.
 | GET  | `/api/admin/messages` | admin | support inbox (filter/paginate) |
 | GET  | `/api/admin/messages/:id` | admin | read one (auto marks new→read) |
 | PATCH | `/api/admin/messages/:id` | admin | status / admin note |
+| POST | `/api/admin/messages/:id/reply` | admin | email a reply to the sender, record thread |
 | DELETE | `/api/admin/messages/:id` | admin | delete a message |

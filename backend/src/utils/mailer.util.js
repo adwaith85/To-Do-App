@@ -759,3 +759,116 @@ export async function sendAccountStatusEmail(to, { name, action, reason }) {
     return { delivered: false };
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   6. SUPPORT MESSAGE REPLY EMAIL  (new — sent when an admin replies
+   to a public contact message from the admin panel)
+   ───────────────────────────────────────────────────────────────── */
+
+/**
+ * Send the admin's reply to a support contact message back to the sender.
+ * The sender reached out via the public help form, so this email lands in
+ * the inbox they used to file the complaint.
+ *
+ * @param {string} to  - email the message came from
+ * @param {{ name: string, reply: string, originalSubject: string, original: string }} opts
+ * @returns {Promise<{delivered: boolean, error?: string}>}
+ */
+export async function sendSupportReplyEmail(to, { name, reply, originalSubject, original }) {
+  const ESCAPE_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ESCAPE_MAP[c]);
+
+  const firstName = String(name || "there").split(" ")[0];
+  const safeReply = esc(reply);
+  const safeOriginal = esc(original);
+  const safeFrom = esc(name);
+
+  const subject = /^re:\s+/i.test(originalSubject)
+    ? originalSubject
+    : `Re: ${originalSubject}`;
+
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `Thanks for reaching out to GonnaDo App support. Here's our reply:`,
+    ``,
+    `${reply}`,
+    ``,
+    `──── Your original message ────`,
+    `${original}`,
+    ``,
+    `— The GonnaDo App Team`,
+  ].join("\n");
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:13px;color:#06b6d4;font-weight:600;letter-spacing:0.5px;">
+      💬 &nbsp;REPLY FROM SUPPORT
+    </p>
+    <h1 style="margin:0 0 14px;font-size:22px;font-weight:700;color:#ede9fe;line-height:1.3;">
+      Hi ${firstName}, we've replied to your message
+    </h1>
+    <p style="margin:0 0 24px;font-size:14px;color:#b8a9d9;line-height:1.7;">
+      Someone from the GonnaDo App team has responded to your request.
+    </p>
+
+    <!-- the reply -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="
+      background:rgba(6,182,212,0.08);
+      border:1px solid rgba(6,182,212,0.28);
+      border-radius:14px;
+      padding:20px 24px;
+      margin:0 0 24px;
+    ">
+      <tr><td>
+        <p style="margin:0 0 8px;font-size:11px;color:#7dd3fc;letter-spacing:1px;text-transform:uppercase;font-weight:600;">
+          ${esc("GonnaDo App")} · Reply from ${safeFrom}
+        </p>
+        <p style="margin:0;font-size:14px;color:#e0e7ff;line-height:1.8;white-space:pre-wrap;">
+          ${safeReply}
+        </p>
+      </td></tr>
+    </table>
+
+    <!-- original message quote -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="
+      background:rgba(139,92,246,0.06);
+      border-left:3px solid #a78bfa;
+      border-radius:0 12px 12px 0;
+      padding:16px 20px;
+      margin:0 0 24px;
+    ">
+      <tr><td>
+        <p style="margin:0 0 8px;font-size:11px;color:#9d8fc1;letter-spacing:1px;text-transform:uppercase;font-weight:600;">
+          Your original message
+        </p>
+        <p style="margin:0;font-size:13px;color:#b8a9d9;line-height:1.7;white-space:pre-wrap;">
+          ${safeOriginal}
+        </p>
+      </td></tr>
+    </table>
+
+    <p style="margin:0;font-size:12px;color:#7c6d9e;line-height:1.6;">
+      Did this resolve your question? Feel free to reply to this email and we'll
+      pick it right back up. — The GonnaDo App Team
+    </p>
+  `;
+
+  const html = emailShell({
+    preheader: `GonnaDo App support replied to your message about "${esc(originalSubject)}"`,
+    body,
+    footerNote: "This is a reply to your support request. Please do not reply to this address.",
+  });
+
+  if (!transporter) {
+    console.log(`[mail:dev] Support reply for ${to} — SMTP not configured:\n${reply}`);
+    return { delivered: false };
+  }
+
+  try {
+    await transporter.sendMail({ from: MAIL_FROM, to, subject, text, html });
+    return { delivered: true };
+  } catch (error) {
+    console.error("[mail] Support-reply email failed:", error.message);
+    return { delivered: false, error: error.message };
+  }
+}
