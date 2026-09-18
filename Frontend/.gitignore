@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+server.pem
 
 # Environment files (keep the example, ignore real values)
 .env

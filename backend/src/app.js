@@ -1,9 +1,3 @@
-/**
- * Express application assembly — middleware pipeline + route table.
- *
- * Kept separate from server.js so the app can be imported by tests
- * without opening a port or connecting to a database.
- */
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -11,61 +5,97 @@ import cookieParser from "cookie-parser";
 import { fileURLToPath } from "url";
 import path from "path";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const isProd = process.env.NODE_ENV === "production";
-const CLIENT_URL = (process.env.CLIENT_URL || "http://localhost:5173").split(",").map(url => url.trim());
-
 import authRoutes from "./routes/auth.routes.js";
 import todoRoutes from "./routes/todo.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import contactRoutes from "./routes/contact.routes.js";
 import { apiLimiter } from "./middleware/rateLimiter.middleware.js";
 import { ensureCsrfCookie } from "./middleware/csrf.middleware.js";
-import { notFoundHandler, errorHandler } from "./middleware/error.middleware.js";
+import {
+  notFoundHandler,
+  errorHandler,
+} from "./middleware/error.middleware.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const isProd = process.env.NODE_ENV === "production";
+
+const CLIENT_URL = (
+  process.env.CLIENT_URL || "http://localhost:5173"
+)
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
 
 export function createApp() {
   const app = express();
 
   /* ---- Security & platform middleware ---- */
 
-  // Sets sensible security headers (X-Content-Type-Options, HSTS in prod...).
   app.use(helmet());
 
-  // Trust the first proxy hop so req.ip / rate limiting see real client IPs.
-  if (isProd) app.set("trust proxy", 1);
+  // Trust the first proxy hop (Caddy) in production.
+  if (isProd) {
+    app.set("trust proxy", 1);
+  }
 
-  // Production hardening: force HTTPS when the proxy tells us it was plain.
+  // Force HTTPS in production if the proxy reports HTTP.
   if (isProd) {
     app.use((req, res, next) => {
       if (req.headers["x-forwarded-proto"] === "http") {
-        return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
+        return res.redirect(
+          308,
+          `https://${req.headers.host}${req.originalUrl}`
+        );
       }
+
       next();
     });
   }
 
-  // Allow only the frontend origin, WITH credentials (refresh cookie).
+  /* ---- CORS ---- */
+
   app.use(
     cors({
-      origin: CLIENT_URL,
+      origin: (origin, callback) => {
+        // Allow requests without an Origin header.
+        // Useful for curl, server-to-server requests, etc.
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        // Allow only configured frontend origins.
+        if (CLIENT_URL.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`CORS blocked: ${origin}`));
+      },
+
       credentials: true,
-      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+
+      methods: [
+        "GET",
+        "POST",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+      ],
     })
   );
 
-  // Reject absurdly large bodies early (DoS surface reduction).
+  /* ---- Body & cookies ---- */
+
   app.use(express.json({ limit: "10kb" }));
 
-  // Needed to read the httpOnly refresh-token cookie.
   app.use(cookieParser());
 
-  // Double-submit CSRF: make sure every visitor carries a readable token
-  // before they hit any cookie-trusting endpoint.
+  /* ---- CSRF ---- */
+
   app.use(ensureCsrfCookie);
 
-  /* ---- Lightweight request logger (development only) ---- */
+  /* ---- Request logger ---- */
 
   if (!isProd) {
     app.use((req, _res, next) => {
@@ -74,16 +104,24 @@ export function createApp() {
     });
   }
 
-  /* ---- Global API rate limit + routes ---- */
+  /* ---- API ---- */
 
   const api = express.Router();
+
   api.use(apiLimiter);
 
-  api.get("/health", (_req, res) =>
-    res.json({ success: true, message: "API is healthy", uptime: process.uptime() })
-  );
+  api.get("/health", (_req, res) => {
+    res.json({
+      success: true,
+      message: "API is healthy",
+      uptime: process.uptime(),
+    });
+  });
 
-  api.use("/uploads", express.static(path.join(__dirname, "../../uploads")));
+  api.use(
+    "/uploads",
+    express.static(path.join(__dirname, "../../uploads"))
+  );
 
   api.use("/auth", authRoutes);
   api.use("/todos", todoRoutes);
@@ -92,13 +130,17 @@ export function createApp() {
 
   app.use("/api", api);
 
-  // Root info page (kept from the original backend for quick checks).
-  app.get("/", (_req, res) => res.send("Backend is running!"));
+  /* ---- Root ---- */
 
-  /* ---- Error pipeline (must stay last) ---- */
+  app.get("/", (_req, res) => {
+    res.send("Backend is running!");
+  });
 
-  app.use(notFoundHandler); // unmatched routes → 404
-  app.use(errorHandler);    // everything throwable → clean JSON
+  /* ---- Error handling ---- */
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
   return app;
 }
+
